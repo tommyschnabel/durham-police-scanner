@@ -1,0 +1,28 @@
+# Core web framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+websockets>=12.0
+python-multipart>=0.0.6
+jinja2>=3.1.2
+python-dotenv>=1.0.0
+
+# Audio processing
+requests>=2.31.0
+pydub>=0.25.1
+ffmpeg-python>=0.2.0
+numpy>=1.24.0
+soundfile>=0.12.1
+librosa>=0.10.1
+
+# Transcription
+faster-whisper>=0.10.0
+ctranslate2>=4.0,<5
+huggingface-hub>=0.23
+tokenizers>=0.13,<1
+onnxruntime>=1.14,<2
+av>=11
+
+# Logging and utilities
+python-json-logger>=2.0.0
+tqdm>=4.66.0
+aiofiles>=23.2.0

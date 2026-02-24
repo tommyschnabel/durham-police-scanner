@@ -1,0 +1,38 @@
+# Docker Compose override file
+# Copy this to docker-compose.override.yml and customize as needed
+# docker-compose automatically reads docker-compose.override.yml if present
+
+version: '3.8'
+
+services:
+  transcriber:
+    # Map custom port (change external port from 8000 to 8080)
+    # ports:
+    #   - "8080:8000"
+    
+    # Environment variable overrides
+    environment:
+      - WHISPER_MODEL=small  # Use better quality model
+      - LOG_LEVEL=DEBUG       # More verbose logging
+    
+    # Resource limits (uncomment to set)
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '2.0'
+    #       memory: 2G
+    #     reservations:
+    #       cpus: '1.0'
+    #       memory: 1G
+    
+    # GPU support (requires nvidia-docker)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    # environment:
+    #   - WHISPER_DEVICE=cuda
+    #   - WHISPER_COMPUTE_TYPE=float16

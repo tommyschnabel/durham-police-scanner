@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Durham Police Scanner Transcriber</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        header {
+            background: #16213e;
+            padding: 1rem 2rem;
+            border-bottom: 3px solid #0f3460;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        header h1 {
+            font-size: 1.5rem;
+            color: #e94560;
+        }
+        
+        header h1 span {
+            color: #0f3460;
+            background: #e94560;
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            margin-left: 0.5rem;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+        }
+        
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            font-size: 0.85rem;
+            color: #aaa;
+        }
+        
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #e94560;
+            animation: pulse 1.5s infinite;
+        }
+        
+        .status-dot.connected {
+            background: #00d9ff;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .model-info {
+            font-family: 'Courier New', monospace;
+            background: #0f3460;
+            padding: 0.3rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+        }
+        
+        main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 1rem;
+            max-width: 1200px;
+            margin: 0 auto;
+            width: 100%;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+        
+        button {
+            background: #0f3460;
+            color: #eee;
+            border: none;
+            padding: 0.6rem 1.2rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+        
+        button:hover {
+            background: #e94560;
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .transcript-container {
+            flex: 1;
+            background: #16213e;
+            border-radius: 8px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid #0f3460;
+        }
+        
+        .transcript-header {
+            background: #0f3460;
+            padding: 0.8rem 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .transcript-header h2 {
+            font-size: 1rem;
+            font-weight: 500;
+        }
+        
+        .entry-count {
+            font-size: 0.8rem;
+            color: #aaa;
+        }
+        
+        .transcript {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        
+        .entry {
+            background: #1a1a2e;
+            padding: 0.8rem 1rem;
+            border-radius: 6px;
+            border-left: 3px solid #e94560;
+            animation: fadeIn 0.3s ease;
+            transition: all 0.2s;
+        }
+        
+        .entry:hover {
+            background: #1f2937;
+        }
+        
+        .entry.new {
+            border-left-color: #00d9ff;
+            background: #1f2d3d;
+        }
+        
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .entry-time {
+            font-size: 0.75rem;
+            color: #e94560;
+            font-family: 'Courier New', monospace;
+            margin-bottom: 0.3rem;
+        }
+        
+        .entry-text {
+            font-size: 1rem;
+            line-height: 1.5;
+            color: #eee;
+        }
+        
+        .entry-confidence {
+            font-size: 0.7rem;
+            color: #666;
+            margin-top: 0.3rem;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: #666;
+        }
+        
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+        
+        footer {
+            background: #16213e;
+            padding: 1rem;
+            text-align: center;
+            font-size: 0.8rem;
+            color: #666;
+            border-top: 1px solid #0f3460;
+        }
+        
+        footer a {
+            color: #e94560;
+            text-decoration: none;
+        }
+        
+        .error-message {
+            background: #e94560;
+            color: white;
+            padding: 1rem;
+            border-radius: 6px;
+            margin-bottom: 1rem;
+            display: none;
+        }
+        
+        .error-message.show {
+            display: block;
+        }
+        
+        /* Scrollbar styling */
+        .transcript::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        .transcript::-webkit-scrollbar-track {
+            background: #1a1a2e;
+        }
+        
+        .transcript::-webkit-scrollbar-thumb {
+            background: #0f3460;
+            border-radius: 4px;
+        }
+        
+        .transcript::-webkit-scrollbar-thumb:hover {
+            background: #e94560;
+        }
+        
+        @media (max-width: 600px) {
+            header {
+                padding: 1rem;
+            }
+            
+            header h1 {
+                font-size: 1.2rem;
+            }
+            
+            .entry-text {
+                font-size: 0.95rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>
+            Durham Police Scanner
+            <span>Live</span>
+        </h1>
+        <div class="status">
+            <div class="status-indicator">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">Connecting...</span>
+            </div>
+            <div class="model-info" id="modelInfo">Model: {{ model }}</div>
+        </div>
+    </header>
+    
+    <main>
+        <div class="error-message" id="errorMessage"></div>
+        
+        <div class="controls">
+            <button onclick="clearTranscript()">Clear Display</button>
+            <button onclick="exportTranscript()">Export JSON</button>
+            <button onclick="toggleAutoScroll()" id="autoScrollBtn">Auto-scroll: ON</button>
+        </div>
+        
+        <div class="transcript-container">
+            <div class="transcript-header">
+                <h2>Live Transcript</h2>
+                <div class="entry-count" id="entryCount">0 entries</div>
+            </div>
+            <div class="transcript" id="transcript">
+                <div class="empty-state">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                    </svg>
+                    <p>Waiting for audio stream...</p>
+                    <p style="font-size: 0.85rem; margin-top: 0.5rem;">Transcriptions will appear here in real-time</p>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <footer>
+        <p>Stream: {{ stream_url }} | Connected clients: <span id="clientCount">0</span></p>
+        <p style="margin-top: 0.5rem;">Powered by <a href="https://github.com/SYSTRAN/faster-whisper" target="_blank">faster-whisper</a></p>
+    </footer>
+    
+    <script>
+        let ws = null;
+        let reconnectInterval = null;
+        let entryCount = 0;
+        let autoScroll = true;
+        const transcriptEl = document.getElementById('transcript');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const entryCountEl = document.getElementById('entryCount');
+        const errorMessage = document.getElementById('errorMessage');
+        
+        function connect() {
+            const wsUrl = `ws://${window.location.host}/ws`;
+            ws = new WebSocket(wsUrl);
+            
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                statusDot.classList.add('connected');
+                statusText.textContent = 'Connected';
+                clearError();
+                
+                // Start ping to keep connection alive
+                setInterval(() => {
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ action: 'ping' }));
+                    }
+                }, 30000);
+            };
+            
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                handleMessage(data);
+            };
+            
+            ws.onclose = () => {
+                console.log('WebSocket disconnected');
+                statusDot.classList.remove('connected');
+                statusText.textContent = 'Reconnecting...';
+                showError('Connection lost. Reconnecting...');
+                
+                // Reconnect after 3 seconds
+                setTimeout(connect, 3000);
+            };
+            
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                showError('WebSocket error occurred');
+            };
+        }
+        
+        function handleMessage(data) {
+            switch (data.type) {
+                case 'history':
+                    // Load history
+                    data.entries.forEach(entry => addEntry(entry, false));
+                    break;
+                    
+                case 'transcription':
+                    addEntry(data, true);
+                    break;
+                    
+                case 'pong':
+                    // Connection alive
+                    break;
+            }
+        }
+        
+        function addEntry(entry, isNew) {
+            // Remove empty state on first entry
+            if (entryCount === 0) {
+                transcriptEl.innerHTML = '';
+            }
+            
+            const entryEl = document.createElement('div');
+            entryEl.className = 'entry' + (isNew ? ' new' : '');
+            
+            const time = new Date(entry.timestamp).toLocaleTimeString();
+            const confidence = (entry.confidence * 100).toFixed(1);
+            
+            entryEl.innerHTML = `
+                <div class="entry-time">${time}</div>
+                <div class="entry-text">${escapeHtml(entry.text)}</div>
+                <div class="entry-confidence">Confidence: ${confidence}%</div>
+            `;
+            
+            transcriptEl.appendChild(entryEl);
+            entryCount++;
+            entryCountEl.textContent = `${entryCount} entries`;
+            
+            // Remove 'new' highlight after animation
+            if (isNew) {
+                setTimeout(() => entryEl.classList.remove('new'), 1000);
+            }
+            
+            // Auto-scroll
+            if (autoScroll) {
+                transcriptEl.scrollTop = transcriptEl.scrollHeight;
+            }
+            
+            // Limit entries to prevent memory issues
+            while (transcriptEl.children.length > 500) {
+                transcriptEl.removeChild(transcriptEl.firstChild);
+            }
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function clearTranscript() {
+            transcriptEl.innerHTML = `
+                <div class="empty-state">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                    </svg>
+                    <p>Display cleared. New transcriptions will appear here.</p>
+                </div>
+            `;
+            entryCount = 0;
+            entryCountEl.textContent = '0 entries';
+        }
+        
+        function exportTranscript() {
+            const entries = [];
+            document.querySelectorAll('.entry').forEach(el => {
+                const text = el.querySelector('.entry-text').textContent;
+                const time = el.querySelector('.entry-time').textContent;
+                entries.push({ time, text });
+            });
+            
+            const blob = new Blob([JSON.stringify(entries, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `transcript_${new Date().toISOString().slice(0,10)}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        
+        function toggleAutoScroll() {
+            autoScroll = !autoScroll;
+            document.getElementById('autoScrollBtn').textContent = `Auto-scroll: ${autoScroll ? 'ON' : 'OFF'}`;
+        }
+        
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.classList.add('show');
+        }
+        
+        function clearError() {
+            errorMessage.classList.remove('show');
+        }
+        
+        // Update client count periodically
+        async function updateStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                document.getElementById('clientCount').textContent = data.connected_clients;
+            } catch (e) {
+                console.error('Failed to fetch status:', e);
+            }
+        }
+        
+        // Initial connection
+        connect();
+        
+        // Update status every 5 seconds
+        setInterval(updateStatus, 5000);
+        
+        // Handle page visibility changes
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && ws.readyState === WebSocket.CLOSED) {
+                connect();
+            }
+        });
+    </script>
+</body>
+</html>

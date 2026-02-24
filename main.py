@@ -1,0 +1,242 @@
+"""
+Main FastAPI application for real-time audio transcription.
+Provides WebSocket endpoint for live transcript updates and web dashboard.
+"""
+import asyncio
+import logging
+import json
+import os
+from datetime import datetime
+from contextlib import asynccontextmanager
+from typing import Optional
+
+import numpy as np
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from starlette.requests import Request
+from dotenv import load_dotenv
+
+from audio_streamer import AudioStreamReader
+from transcriber import WhisperTranscriber, TranscriptionSegment
+from connection_manager import ConnectionManager
+from transcript_storage import TranscriptManager
+
+# Load environment variables
+load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    level=getattr(logging, os.getenv('LOG_LEVEL', 'INFO').upper()),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Configuration
+STREAM_URL = os.getenv('STREAM_URL', 'https://stream.durhampolicescanner.com/')
+WHISPER_MODEL = os.getenv('WHISPER_MODEL', 'base')
+WHISPER_DEVICE = os.getenv('WHISPER_DEVICE', 'cpu')
+WHISPER_COMPUTE_TYPE = os.getenv('WHISPER_COMPUTE_TYPE', 'int8')
+LANGUAGE = os.getenv('LANGUAGE', 'en')
+HOST = os.getenv('HOST', '0.0.0.0')
+PORT = int(os.getenv('PORT', '8000'))
+CHUNK_DURATION_MS = int(os.getenv('CHUNK_DURATION_MS', '5000'))
+OUTPUT_FILE = os.getenv('OUTPUT_FILE', 'transcript.jsonl')
+MAX_LOG_SIZE_MB = float(os.getenv('MAX_LOG_SIZE_MB', '100'))
+LOG_RETENTION_DAYS = int(os.getenv('LOG_RETENTION_DAYS', '7'))
+
+# Global state
+audio_reader: Optional[AudioStreamReader] = None
+transcriber: Optional[WhisperTranscriber] = None
+transcript_manager: Optional[TranscriptManager] = None
+connection_manager = ConnectionManager()
+transcription_task: Optional[asyncio.Task] = None
+latest_transcript: list = []
+
+
+async def transcription_worker():
+    """Background task that reads audio and performs transcription."""
+    global latest_transcript
+    
+    logger.info("Starting transcription worker")
+    
+    # Initialize components
+    audio_reader = AudioStreamReader(
+        stream_url=STREAM_URL,
+        chunk_duration_ms=CHUNK_DURATION_MS,
+        target_sample_rate=16000
+    )
+    
+    transcriber = WhisperTranscriber(
+        model_size=WHISPER_MODEL,
+        device=WHISPER_DEVICE,
+        compute_type=WHISPER_COMPUTE_TYPE,
+        language=LANGUAGE if LANGUAGE != 'auto' else None,
+        vad_filter=True
+    )
+    
+    transcript_manager = TranscriptManager(
+        output_file=OUTPUT_FILE,
+        max_size_mb=MAX_LOG_SIZE_MB,
+        retention_days=LOG_RETENTION_DAYS
+    )
+    
+    try:
+        for audio_chunk in audio_reader.stream_audio():
+            # Process audio chunk
+            segments = transcriber.process_audio_buffer(audio_chunk)
+            
+            for segment in segments:
+                if not segment.text.strip():
+                    continue
+                
+                # Create entry
+                entry = {
+                    'type': 'transcription',
+                    'text': segment.text,
+                    'start_time': segment.start_time,
+                    'end_time': segment.end_time,
+                    'confidence': segment.confidence,
+                    'timestamp': segment.timestamp.isoformat()
+                }
+                
+                # Log to console
+                logger.info(f"[{segment.timestamp.strftime('%H:%M:%S')}] {segment.text}")
+                
+                # Save to file
+                transcript_manager.write_entry(entry)
+                
+                # Update latest transcript (keep last 100)
+                latest_transcript.append(entry)
+                if len(latest_transcript) > 100:
+                    latest_transcript = latest_transcript[-100:]
+                
+                # Broadcast to WebSocket clients
+                await connection_manager.broadcast_json(entry)
+                
+    except Exception as e:
+        logger.error(f"Transcription worker error: {e}")
+    finally:
+        logger.info("Transcription worker stopped")
+        # Flush remaining audio
+        if transcriber:
+            final_segments = transcriber.flush()
+            for segment in final_segments:
+                entry = {
+                    'type': 'transcription',
+                    'text': segment.text,
+                    'start_time': segment.start_time,
+                    'end_time': segment.end_time,
+                    'confidence': segment.confidence,
+                    'timestamp': segment.timestamp.isoformat()
+                }
+                transcript_manager.write_entry(entry)
+                await connection_manager.broadcast_json(entry)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifespan."""
+    global transcription_task
+    
+    # Startup
+    logger.info("Starting up Durham Police Scanner Transcriber")
+    logger.info(f"Stream URL: {STREAM_URL}")
+    logger.info(f"Whisper model: {WHISPER_MODEL} on {WHISPER_DEVICE}")
+    
+    # Start transcription in background
+    transcription_task = asyncio.create_task(transcription_worker())
+    
+    yield
+    
+    # Shutdown
+    logger.info("Shutting down")
+    if transcription_task:
+        transcription_task.cancel()
+        try:
+            await transcription_task
+        except asyncio.CancelledError:
+            pass
+
+
+# Create FastAPI app
+app = FastAPI(
+    title="Durham Police Scanner Transcriber",
+    description="Real-time audio transcription from police scanner stream",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+# Templates
+templates = Jinja2Templates(directory="templates")
+
+
+@app.get("/", response_class=HTMLResponse)
+async def get_dashboard(request: Request):
+    """Serve the main dashboard page."""
+    return templates.TemplateResponse("index.html", {
+        "request": request,
+        "stream_url": STREAM_URL,
+        "model": WHISPER_MODEL
+    })
+
+
+@app.get("/api/status")
+async def get_status():
+    """Get current system status."""
+    return {
+        "status": "running" if transcription_task and not transcription_task.done() else "stopped",
+        "stream_url": STREAM_URL,
+        "model": WHISPER_MODEL,
+        "connected_clients": len(connection_manager.active_connections),
+        "latest_entries": latest_transcript[-10:]
+    }
+
+
+@app.get("/api/transcript")
+async def get_transcript(count: int = 50):
+    """Get recent transcript entries."""
+    return {
+        "entries": latest_transcript[-count:]
+    }
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for real-time transcript updates."""
+    await connection_manager.connect(websocket)
+    
+    try:
+        # Send recent history to new client
+        await websocket.send_json({
+            "type": "history",
+            "entries": latest_transcript[-20:]
+        })
+        
+        # Keep connection alive and handle client messages
+        while True:
+            try:
+                message = await websocket.receive_text()
+                data = json.loads(message)
+                
+                if data.get('action') == 'ping':
+                    await websocket.send_json({"type": "pong"})
+                    
+            except json.JSONDecodeError:
+                pass
+            except Exception as e:
+                logger.error(f"WebSocket error: {e}")
+                break
+                
+    except WebSocketDisconnect:
+        logger.info("Client disconnected")
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+    finally:
+        connection_manager.disconnect(websocket)
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host=HOST, port=PORT)

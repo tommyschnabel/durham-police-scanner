@@ -1,1 +1,39 @@
-venv
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv/
+*.egg-info/
+dist/
+build/
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Transcripts (keep directory, ignore contents)
+transcripts/*
+!transcripts/.gitkeep
+
+# Logs
+*.log
+
+# Local environment files
+.env.local
+.env.*.local
+
+# Docker volumes
+whisper-cache/

@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  transcriber:
+    build: .
+    container_name: durham-police-transcriber
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist transcripts outside container
+      - ./transcripts:/app/transcripts
+      # Cache Whisper models
+      - whisper-cache:/root/.cache/whisper
+    environment:
+      # Override defaults via environment variables
+      - WHISPER_MODEL=${WHISPER_MODEL:-base}
+      - WHISPER_DEVICE=${WHISPER_DEVICE:-cpu}
+      - WHISPER_COMPUTE_TYPE=${WHISPER_COMPUTE_TYPE:-int8}
+      - LANGUAGE=${LANGUAGE:-en}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/api/status')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  whisper-cache:
+    driver: local
