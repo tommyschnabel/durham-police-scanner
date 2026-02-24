@@ -338,7 +338,9 @@
         const errorMessage = document.getElementById('errorMessage');
         
         function connect() {
-            const wsUrl = `ws://${window.location.host}/ws`;
+            // Use wss:// for HTTPS pages, ws:// for HTTP
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws`;
             ws = new WebSocket(wsUrl);
             
             ws.onopen = () => {
@@ -486,7 +488,24 @@
                 console.error('Failed to fetch status:', e);
             }
         }
-        
+
+        // Load transcript history on page load
+        async function loadHistory() {
+            try {
+                const response = await fetch('/api/transcript?count=20');
+                const data = await response.json();
+                if (data.entries && data.entries.length > 0) {
+                    // Load in reverse order (oldest first) so newest ends up at top
+                    data.entries.slice().reverse().forEach(entry => addEntry(entry, false));
+                }
+            } catch (e) {
+                console.error('Failed to load history:', e);
+            }
+        }
+
+        // Load history first, then connect WebSocket
+        loadHistory();
+
         // Initial connection
         connect();
         
