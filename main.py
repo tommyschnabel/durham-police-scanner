@@ -262,14 +262,6 @@ async def get_status():
     }
 
 
-@app.get("/api/transcript")
-async def get_transcript(count: int = 50):
-    """Get recent transcript entries."""
-    return {
-        "entries": latest_transcript[-count:]
-    }
-
-
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for real-time transcript updates."""

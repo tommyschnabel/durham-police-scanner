@@ -144,7 +144,6 @@ For mid-range hardware, `base` or `small` is recommended.
 
 - `GET /` - Web dashboard
 - `GET /api/status` - System status and recent entries
-- `GET /api/transcript?count=50` - Get recent transcript entries
 - `WS /ws` - WebSocket for real-time updates
 
 ## Output Format

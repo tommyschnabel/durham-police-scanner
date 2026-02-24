@@ -489,24 +489,7 @@
             }
         }
 
-        // Load transcript history on page load
-        async function loadHistory() {
-            try {
-                const response = await fetch('/api/transcript?count=20');
-                const data = await response.json();
-                if (data.entries && data.entries.length > 0) {
-                    // Load in reverse order (oldest first) so newest ends up at top
-                    data.entries.slice().reverse().forEach(entry => addEntry(entry, false));
-                }
-            } catch (e) {
-                console.error('Failed to load history:', e);
-            }
-        }
-
-        // Load history first, then connect WebSocket
-        loadHistory();
-
-        // Initial connection
+        // Initial connection (WebSocket will send history on connect)
         connect();
         
         // Update status every 5 seconds
