@@ -45,6 +45,7 @@ CHUNK_DURATION_MS = int(os.getenv('CHUNK_DURATION_MS', '5000'))
 OUTPUT_FILE = os.getenv('OUTPUT_FILE', 'transcript.jsonl')
 MAX_LOG_SIZE_MB = float(os.getenv('MAX_LOG_SIZE_MB', '100'))
 LOG_RETENTION_DAYS = int(os.getenv('LOG_RETENTION_DAYS', '7'))
+LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
 
 # Global state
 audio_reader: Optional[AudioStreamReader] = None
@@ -61,21 +62,26 @@ async def transcription_worker():
     
     logger.info("Starting transcription worker")
     
-    # Initialize components
+    # Initialize audio reader
     audio_reader = AudioStreamReader(
         stream_url=STREAM_URL,
         chunk_duration_ms=CHUNK_DURATION_MS,
         target_sample_rate=16000
     )
     
-    transcriber = WhisperTranscriber(
+    # Initialize transcriber in thread pool to avoid blocking
+    logger.info("Loading Whisper model (this may take a moment)...")
+    loop = asyncio.get_event_loop()
+    transcriber = await loop.run_in_executor(None, lambda: WhisperTranscriber(
         model_size=WHISPER_MODEL,
         device=WHISPER_DEVICE,
         compute_type=WHISPER_COMPUTE_TYPE,
         language=LANGUAGE if LANGUAGE != 'auto' else None,
         vad_filter=True
-    )
+    ))
+    logger.info("Whisper model loaded successfully")
     
+    # Initialize transcript manager
     transcript_manager = TranscriptManager(
         output_file=OUTPUT_FILE,
         max_size_mb=MAX_LOG_SIZE_MB,
@@ -239,4 +245,5 @@ async def websocket_endpoint(websocket: WebSocket):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host=HOST, port=PORT)
+    logger.info(f"Starting server on {HOST}:{PORT}")
+    uvicorn.run(app, host=HOST, port=PORT, log_level=LOG_LEVEL.lower())

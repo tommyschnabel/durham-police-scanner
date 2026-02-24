@@ -5,17 +5,11 @@
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR"
 
-# Check if virtual environment exists
-if [ ! -d "venv" ]; then
-    echo "Error: Virtual environment not found. Please create it first:"
-    echo "  python3 -m venv venv"
-    echo "  source venv/bin/activate"
-    echo "  pip install -r requirements.txt"
-    exit 1
+# Check if we're in a Docker container (no venv needed)
+if [ ! -f "/.dockerenv" ] && [ -d "venv" ]; then
+    # Local development - activate virtual environment
+    source venv/bin/activate
 fi
-
-# Activate virtual environment
-source venv/bin/activate
 
 # Check for ffmpeg
 if ! command -v ffmpeg &> /dev/null; then

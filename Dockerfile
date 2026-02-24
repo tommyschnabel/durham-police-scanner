@@ -32,21 +32,19 @@ WORKDIR /app
 
 # Copy application code
 COPY main.py audio_streamer.py transcriber.py connection_manager.py transcript_storage.py ./
-COPY templates/ templates/
+COPY templates/ ./templates/
 COPY .env start.sh ./
 
 # Create directory for transcripts
 RUN mkdir -p /app/transcripts
 
-# Make start script executable
-RUN chmod +x start.sh
-
 # Expose port
 EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:8000/api/status')" || exit 1
+# Health check - give more time for model download on first run
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=5 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/status')" || exit 1
 
-# Run the application
-CMD ["./start.sh"]
+# Run the application directly with uvicorn
+# Using 0.0.0.0 explicitly and workers=1 for the transcription worker to function correctly
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--access-log"]
