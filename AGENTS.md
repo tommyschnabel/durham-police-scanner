@@ -49,6 +49,7 @@ docker build -t durham-police-transcriber .
    - Background transcription worker (`transcription_worker`)
    - Web dashboard at `/`
    - API endpoints for status and transcript retrieval
+   - **Important**: Audio streaming runs in a separate thread to avoid blocking the event loop
 
 2. **audio_streamer.py** - HTTP audio stream capture
    - `AudioStreamReader` class
@@ -84,23 +85,50 @@ TranscriptSegments → ConnectionManager (broadcast) + TranscriptManager (file)
 ## Configuration
 
 ### Environment Variables
-All configuration is in `.env` file:
+All configuration uses environment variables with sensible defaults. **No `.env` file is required**.
 
-| Variable | Description |
-|----------|-------------|
-| `STREAM_URL` | Audio stream URL (default: https://stream.durhampolicescanner.com/) |
-| `WHISPER_MODEL` | Model size: tiny/base/small/medium/large-v1/2/3 |
-| `WHISPER_DEVICE` | cpu or cuda |
-| `WHISPER_COMPUTE_TYPE` | int8, int8_float16, float16, float32 |
-| `CHUNK_DURATION_MS` | Audio chunk size (default: 5000ms) |
-| `OUTPUT_FILE` | Transcript output path (default: transcripts/transcript.jsonl) |
-| `MAX_LOG_SIZE_MB` | Log rotation threshold |
-| `LOG_RETENTION_DAYS` | Cleanup threshold |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `STREAM_URL` | `https://stream.durhampolicescanner.com/` | Audio stream URL |
+| `SAMPLE_RATE` | `16000` | Audio sample rate in Hz |
+| `CHUNK_DURATION_MS` | `5000` | Audio chunk size in milliseconds |
+| `OVERLAP_MS` | `1000` | Buffer overlap in milliseconds |
+| `WHISPER_MODEL` | `base` | Model size: tiny/base/small/medium/large-v1/2/3 |
+| `WHISPER_DEVICE` | `cpu` | cpu or cuda |
+| `WHISPER_COMPUTE_TYPE` | `int8` | int8, int8_float16, float16, float32 |
+| `LANGUAGE` | `en` | Language code (or 'auto' for detection) |
+| `HOST` | `0.0.0.0` | Server bind address |
+| `PORT` | `8000` | Server port |
+| `OUTPUT_FILE` | `transcripts/transcript.jsonl` | Transcript output path |
+| `MAX_LOG_SIZE_MB` | `100` | Log rotation threshold |
+| `LOG_RETENTION_DAYS` | `7` | Cleanup threshold |
+| `LOG_LEVEL` | `INFO` | Logging level: DEBUG/INFO/WARNING/ERROR |
 
-### Docker Environment
-- Use `.env.local` for local overrides
-- Use `docker-compose.override.yml` for Docker-specific customizations
-- GPU support available via override file
+### Overriding Settings
+
+**Docker Compose:**
+```bash
+WHISPER_MODEL=small docker compose up -d
+```
+
+**Local Development:**
+```bash
+WHISPER_MODEL=small python main.py
+```
+
+### Optional .env File
+While not required, you can create a `.env.local` file for convenience:
+```bash
+# .env.local
+WHISPER_MODEL=small
+WHISPER_DEVICE=cuda
+LOG_LEVEL=DEBUG
+```
+
+Then run with:
+```bash
+docker compose --env-file .env.local up -d
+```
 
 ## Key Implementation Details
 

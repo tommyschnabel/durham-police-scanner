@@ -33,7 +33,6 @@ WORKDIR /app
 # Copy application code
 COPY main.py audio_streamer.py transcriber.py connection_manager.py transcript_storage.py ./
 COPY templates/ ./templates/
-COPY .env start.sh ./
 
 # Create directory for transcripts
 RUN mkdir -p /app/transcripts

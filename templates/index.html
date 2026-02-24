@@ -301,7 +301,6 @@
         <div class="controls">
             <button onclick="clearTranscript()">Clear Display</button>
             <button onclick="exportTranscript()">Export JSON</button>
-            <button onclick="toggleAutoScroll()" id="autoScrollBtn">Auto-scroll: ON</button>
         </div>
         
         <div class="transcript-container">
@@ -317,7 +316,7 @@
                         <line x1="12" y1="16" x2="12.01" y2="16"></line>
                     </svg>
                     <p>Waiting for audio stream...</p>
-                    <p style="font-size: 0.85rem; margin-top: 0.5rem;">Transcriptions will appear here in real-time</p>
+                    <p style="font-size: 0.85rem; margin-top: 0.5rem;">New transcriptions will appear at the top</p>
                 </div>
             </div>
         </div>
@@ -332,7 +331,6 @@
         let ws = null;
         let reconnectInterval = null;
         let entryCount = 0;
-        let autoScroll = true;
         const transcriptEl = document.getElementById('transcript');
         const statusDot = document.getElementById('statusDot');
         const statusText = document.getElementById('statusText');
@@ -381,14 +379,14 @@
         function handleMessage(data) {
             switch (data.type) {
                 case 'history':
-                    // Load history
-                    data.entries.forEach(entry => addEntry(entry, false));
+                    // Load history in reverse order (oldest first) so newest ends up at top
+                    data.entries.slice().reverse().forEach(entry => addEntry(entry, false));
                     break;
-                    
+
                 case 'transcription':
                     addEntry(data, true);
                     break;
-                    
+
                 case 'pong':
                     // Connection alive
                     break;
@@ -400,36 +398,32 @@
             if (entryCount === 0) {
                 transcriptEl.innerHTML = '';
             }
-            
+
             const entryEl = document.createElement('div');
             entryEl.className = 'entry' + (isNew ? ' new' : '');
-            
+
             const time = new Date(entry.timestamp).toLocaleTimeString();
             const confidence = (entry.confidence * 100).toFixed(1);
-            
+
             entryEl.innerHTML = `
                 <div class="entry-time">${time}</div>
                 <div class="entry-text">${escapeHtml(entry.text)}</div>
                 <div class="entry-confidence">Confidence: ${confidence}%</div>
             `;
-            
-            transcriptEl.appendChild(entryEl);
+
+            // Insert at the top (newest first)
+            transcriptEl.insertBefore(entryEl, transcriptEl.firstChild);
             entryCount++;
             entryCountEl.textContent = `${entryCount} entries`;
-            
+
             // Remove 'new' highlight after animation
             if (isNew) {
                 setTimeout(() => entryEl.classList.remove('new'), 1000);
             }
-            
-            // Auto-scroll
-            if (autoScroll) {
-                transcriptEl.scrollTop = transcriptEl.scrollHeight;
-            }
-            
-            // Limit entries to prevent memory issues
+
+            // Limit entries to prevent memory issues (remove oldest from bottom)
             while (transcriptEl.children.length > 500) {
-                transcriptEl.removeChild(transcriptEl.firstChild);
+                transcriptEl.removeChild(transcriptEl.lastChild);
             }
         }
         
@@ -447,7 +441,7 @@
                         <line x1="12" y1="8" x2="12" y2="12"></line>
                         <line x1="12" y1="16" x2="12.01" y2="16"></line>
                     </svg>
-                    <p>Display cleared. New transcriptions will appear here.</p>
+                    <p>Display cleared. New transcriptions will appear at the top.</p>
                 </div>
             `;
             entryCount = 0;
@@ -456,12 +450,14 @@
         
         function exportTranscript() {
             const entries = [];
-            document.querySelectorAll('.entry').forEach(el => {
+            // Export in chronological order (reverse the displayed order)
+            const entryElements = Array.from(document.querySelectorAll('.entry')).reverse();
+            entryElements.forEach(el => {
                 const text = el.querySelector('.entry-text').textContent;
                 const time = el.querySelector('.entry-time').textContent;
                 entries.push({ time, text });
             });
-            
+
             const blob = new Blob([JSON.stringify(entries, null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -470,12 +466,7 @@
             a.click();
             URL.revokeObjectURL(url);
         }
-        
-        function toggleAutoScroll() {
-            autoScroll = !autoScroll;
-            document.getElementById('autoScrollBtn').textContent = `Auto-scroll: ${autoScroll ? 'ON' : 'OFF'}`;
-        }
-        
+
         function showError(message) {
             errorMessage.textContent = message;
             errorMessage.classList.add('show');

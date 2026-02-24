@@ -95,7 +95,9 @@ Access the web dashboard at: **http://localhost:8000**
 
 ## Configuration
 
-Edit `.env` file to customize:
+All configuration is done via environment variables with sensible defaults. No `.env` file is required.
+
+### Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -109,6 +111,22 @@ Edit `.env` file to customize:
 | `OUTPUT_FILE` | `transcripts/transcript.jsonl` | Transcript output file |
 | `MAX_LOG_SIZE_MB` | `100` | Max log file size before rotation |
 | `LOG_RETENTION_DAYS` | `7` | Days to keep old log files |
+
+### Overriding Settings
+
+**Docker Compose:**
+```bash
+# Override specific settings
+WHISPER_MODEL=small WHISPER_DEVICE=cuda docker compose up -d
+
+# Or use an env file (optional)
+docker compose --env-file .env.local up -d
+```
+
+**Local Development:**
+```bash
+WHISPER_MODEL=small python main.py
+```
 
 ### Model Selection Guide
 
