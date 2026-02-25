@@ -37,6 +37,7 @@ OUTPUT_FILE = os.environ.get('OUTPUT_FILE', 'transcripts/transcript.jsonl')
 MAX_LOG_SIZE_MB = float(os.environ.get('MAX_LOG_SIZE_MB', '100'))
 LOG_RETENTION_DAYS = int(os.environ.get('LOG_RETENTION_DAYS', '7'))
 LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
+WS_HISTORY_LIMIT = int(os.environ.get('WS_HISTORY_LIMIT', '100'))
 
 # Configure logging
 logging.basicConfig(
@@ -281,7 +282,7 @@ async def websocket_endpoint(websocket: WebSocket):
         # Send recent history to new client
         await websocket.send_json({
             "type": "history",
-            "entries": latest_transcript[-20:]
+            "entries": latest_transcript[-WS_HISTORY_LIMIT:]
         })
         
         # Keep connection alive and handle client messages

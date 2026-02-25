@@ -103,6 +103,7 @@ All configuration uses environment variables with sensible defaults. **No `.env`
 | `MAX_LOG_SIZE_MB` | `100` | Log rotation threshold |
 | `LOG_RETENTION_DAYS` | `7` | Cleanup threshold |
 | `LOG_LEVEL` | `INFO` | Logging level: DEBUG/INFO/WARNING/ERROR |
+| `WS_HISTORY_LIMIT` | `100` | WebSocket history entries sent on connect |
 
 ### Overriding Settings
 
@@ -199,7 +200,7 @@ To disable GPU reservations in docker-compose.yml, comment out the `deploy` sect
 
 ### WebSocket
 - Broadcasts JSON messages to all clients
-- Sends history (last 20 entries) to new connections
+- Sends history (last WS_HISTORY_LIMIT entries, default 100) to new connections
 - Ping/pong for connection keepalive (30s interval)
 
 ### File Output
