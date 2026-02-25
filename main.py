@@ -52,6 +52,7 @@ transcript_manager: Optional[TranscriptManager] = None
 connection_manager = ConnectionManager()
 transcription_task: Optional[asyncio.Task] = None
 latest_transcript: list = []
+last_broadcast_text: str = ""
 
 # Thread-safe message queue for WebSocket broadcasts
 broadcast_queue: asyncio.Queue = asyncio.Queue()
@@ -79,7 +80,7 @@ def process_audio_chunk_threadsafe(transcriber, audio_chunk, transcript_manager)
 
 def stream_audio_sync(audio_reader, transcriber, transcript_manager):
     """Synchronous audio streaming and transcription loop."""
-    global latest_transcript
+    global latest_transcript, last_broadcast_text
     
     logger.info("Starting audio streaming loop")
     
@@ -94,18 +95,27 @@ def stream_audio_sync(audio_reader, transcriber, transcript_manager):
                     logger.debug("Empty segment text, skipping")
                     continue
                 
+                # Skip if same as last broadcast
+                segment_text = segment.text.strip()
+                if segment_text == last_broadcast_text:
+                    logger.debug("Duplicate message, skipping broadcast")
+                    continue
+                
                 # Create entry
                 entry = {
                     'type': 'transcription',
-                    'text': segment.text,
+                    'text': segment_text,
                     'start_time': segment.start_time,
                     'end_time': segment.end_time,
                     'confidence': segment.confidence,
                     'timestamp': segment.timestamp.isoformat()
                 }
                 
+                # Update last broadcast text
+                last_broadcast_text = segment_text
+                
                 # Log to console
-                logger.info(f"[{segment.timestamp.strftime('%H:%M:%S')}] {segment.text}")
+                logger.info(f"[{segment.timestamp.strftime('%H:%M:%S')}] {segment_text}")
                 
                 # Save to file
                 transcript_manager.write_entry(entry)
