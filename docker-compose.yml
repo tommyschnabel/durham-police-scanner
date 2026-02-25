@@ -26,6 +26,14 @@ services:
       - LOG_RETENTION_DAYS=${LOG_RETENTION_DAYS:-7}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     restart: unless-stopped
+    # GPU support - remove if running on CPU-only systems
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/status')"]
       interval: 30s

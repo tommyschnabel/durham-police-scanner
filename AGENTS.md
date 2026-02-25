@@ -122,12 +122,66 @@ While not required, you can create a `.env.local` file for convenience:
 # .env.local
 WHISPER_MODEL=small
 WHISPER_DEVICE=cuda
+WHISPER_COMPUTE_TYPE=float16
 LOG_LEVEL=DEBUG
 ```
 
 Then run with:
 ```bash
 docker compose --env-file .env.local up -d
+```
+
+## GPU Support
+
+### Prerequisites
+To use GPU acceleration, you need:
+1. **NVIDIA GPU** with CUDA compute capability 6.0+
+2. **NVIDIA Driver** version 525.60.13 or higher
+3. **NVIDIA Container Toolkit** installed on the host:
+   ```bash
+   # Install on Ubuntu/Debian
+   sudo apt-get install -y nvidia-container-toolkit
+   sudo systemctl restart docker
+   ```
+
+### Enabling GPU
+The Docker image includes CUDA 12.1 support. To enable GPU:
+
+**Option 1: Use .env file**
+```bash
+# .env.local
+WHISPER_DEVICE=cuda
+WHISPER_COMPUTE_TYPE=float16
+```
+
+**Option 2: Command line**
+```bash
+WHISPER_DEVICE=cuda WHISPER_COMPUTE_TYPE=float16 docker compose up -d
+```
+
+### Compute Type Recommendations
+| Device | Recommended | Notes |
+|--------|-------------|-------|
+| CPU | `int8` | Fastest on CPU, good quality |
+| GPU (older) | `int8_float16` | Balance of speed/quality |
+| GPU (modern) | `float16` | Best quality, requires more VRAM |
+| GPU (high VRAM) | `float32` | Best quality, slowest |
+
+### CPU-Only Systems
+If you don't have a GPU, the Docker image still works on CPU:
+```bash
+WHISPER_DEVICE=cpu WHISPER_COMPUTE_TYPE=int8 docker compose up -d
+```
+
+To disable GPU reservations in docker-compose.yml, comment out the `deploy` section:
+```yaml
+# deploy:
+#   resources:
+#     reservations:
+#       devices:
+#         - driver: nvidia
+#           count: all
+#           capabilities: [gpu]
 ```
 
 ## Key Implementation Details

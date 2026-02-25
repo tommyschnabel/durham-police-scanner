@@ -1,27 +1,34 @@
 # Multi-stage build for smaller image
-FROM python:3.11-slim AS builder
+# Use CUDA-enabled base image for GPU support (can also run on CPU)
+FROM nvidia/cuda:12.1.0-devel-ubuntu22.04 AS builder
 
-# Install build dependencies
+# Install Python and build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3.11-venv \
+    python3-pip \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Create virtual environment
-RUN python -m venv /opt/venv
+RUN python3.11 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Final stage
-FROM python:3.11-slim
+# Final stage - CUDA runtime for GPU support
+FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
 
-# Install runtime dependencies
+# Install Python and runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3-pip \
     ffmpeg \
     libsndfile1 \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -s /usr/bin/python3.11 /usr/bin/python
 
 # Copy virtual environment from builder
 COPY --from=builder /opt/venv /opt/venv
