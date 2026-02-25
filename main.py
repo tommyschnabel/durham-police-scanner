@@ -39,6 +39,11 @@ LOG_RETENTION_DAYS = int(os.environ.get('LOG_RETENTION_DAYS', '7'))
 LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
 WS_HISTORY_LIMIT = int(os.environ.get('WS_HISTORY_LIMIT', '100'))
 
+# Static list of phrases to exclude from logging
+EXCLUDED_PHRASES = [
+    "Thanks for watching!",
+]
+
 # Configure logging
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL.upper(), logging.INFO),
@@ -100,6 +105,11 @@ def stream_audio_sync(audio_reader, transcriber, transcript_manager):
                 segment_text = segment.text.strip()
                 if segment_text == last_broadcast_text:
                     logger.debug("Duplicate message, skipping broadcast")
+                    continue
+
+                # Skip excluded phrases
+                if segment_text in EXCLUDED_PHRASES:
+                    logger.debug(f"Excluded phrase detected, skipping: {segment_text}")
                     continue
                 
                 # Create entry
