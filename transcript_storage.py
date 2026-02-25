@@ -5,7 +5,7 @@ import json
 import os
 import gzip
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 from dataclasses import asdict
@@ -76,7 +76,7 @@ class TranscriptManager:
     
     def _rotate(self):
         """Perform log rotation."""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
         rotated_name = f"{self.output_file.stem}_{timestamp}{self.output_file.suffix}"
         rotated_path = self.output_file.parent / rotated_name
         
@@ -106,13 +106,13 @@ class TranscriptManager:
     
     def _cleanup_old_logs(self):
         """Remove log files older than retention period."""
-        cutoff = datetime.now() - timedelta(days=self.retention_days)
+        cutoff = datetime.now(timezone.utc).astimezone() - timedelta(days=self.retention_days)
         
         for log_file in self.output_file.parent.glob(f"{self.output_file.stem}_*"):
             try:
                 # Extract timestamp from filename
                 stat = log_file.stat()
-                mtime = datetime.fromtimestamp(stat.st_mtime)
+                mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).astimezone()
                 
                 if mtime < cutoff:
                     log_file.unlink()

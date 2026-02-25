@@ -6,7 +6,7 @@ import numpy as np
 from faster_whisper import WhisperModel
 from typing import Optional, List, Tuple
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +125,7 @@ class WhisperTranscriber:
                     start_time=self.buffer_offset + segment.start,
                     end_time=self.buffer_offset + segment.end,
                     confidence=avg_confidence,
-                    timestamp=datetime.now()
+                    timestamp=datetime.now(timezone.utc).astimezone()
                 ))
             
             return results
