@@ -111,6 +111,11 @@ def stream_audio_sync(audio_reader, transcriber, transcript_manager):
                 if segment_text in EXCLUDED_PHRASES:
                     logger.debug(f"Excluded phrase detected, skipping: {segment_text}")
                     continue
+
+                # Skip one-word entries
+                if len(segment_text.split()) < 2:
+                    logger.debug(f"Single word entry, skipping: {segment_text}")
+                    continue
                 
                 # Create entry
                 entry = {
