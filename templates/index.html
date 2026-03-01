@@ -381,8 +381,8 @@
         function handleMessage(data) {
             switch (data.type) {
                 case 'history':
-                    // Load history in reverse order (oldest first) so newest ends up at top
-                    data.entries.slice().reverse().forEach(entry => addEntry(entry, false));
+                    // Sort by timestamp descending (newest first), then add
+                    data.entries.slice().sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).forEach(entry => addEntry(entry, false));
                     break;
 
                 case 'transcription':
@@ -403,6 +403,7 @@
 
             const entryEl = document.createElement('div');
             entryEl.className = 'entry' + (isNew ? ' new' : '');
+            entryEl.dataset.timestamp = entry.timestamp;
 
             const time = new Date(entry.timestamp).toLocaleTimeString();
             const confidence = (entry.confidence * 100).toFixed(1);
@@ -413,8 +414,25 @@
                 <div class="entry-confidence">Confidence: ${confidence}%</div>
             `;
 
-            // Insert at the top (newest first)
-            transcriptEl.insertBefore(entryEl, transcriptEl.firstChild);
+            // Insert in timestamp-sorted order (newest first)
+            const entryTime = new Date(entry.timestamp).getTime();
+            let inserted = false;
+            const existingEntries = transcriptEl.querySelectorAll('.entry');
+
+            for (const existing of existingEntries) {
+                const existingTime = new Date(existing.dataset.timestamp).getTime();
+                if (entryTime > existingTime) {
+                    transcriptEl.insertBefore(entryEl, existing);
+                    inserted = true;
+                    break;
+                }
+            }
+
+            // If not inserted (older than all existing), append to end
+            if (!inserted) {
+                transcriptEl.appendChild(entryEl);
+            }
+
             entryCount++;
             entryCountEl.textContent = `${entryCount} entries`;
 
