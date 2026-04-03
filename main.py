@@ -328,25 +328,11 @@ templates = Jinja2Templates(directory="templates")
 @app.get("/", response_class=HTMLResponse)
 async def get_dashboard(request: Request):
     """Serve the main dashboard page."""
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "stream_url": STREAM_URL,
-        "model": WHISPER_MODEL
-    })
-
-
-@app.get("/api/status")
-async def get_status():
-    """Get current system status."""
-    with state_lock:
-        entries_snapshot = list(latest_transcript[-10:])
-    return {
-        "status": "running" if transcription_task and not transcription_task.done() else "stopped",
-        "stream_url": STREAM_URL,
-        "model": WHISPER_MODEL,
-        "connected_clients": len(connection_manager.active_connections),
-        "latest_entries": entries_snapshot
-    }
+    return templates.TemplateResponse(
+        request=request,
+        name="index.html",
+        context={"stream_url": STREAM_URL, "model": WHISPER_MODEL}
+    )
 
 
 @app.websocket("/ws")
@@ -355,7 +341,6 @@ async def websocket_endpoint(websocket: WebSocket):
     await connection_manager.connect(websocket)
     
     try:
-        # Send recent history to new client
         with state_lock:
             history_snapshot = list(latest_transcript[-WS_HISTORY_LIMIT:])
         await websocket.send_json({
@@ -363,7 +348,6 @@ async def websocket_endpoint(websocket: WebSocket):
             "entries": history_snapshot
         })
         
-        # Keep connection alive and handle client messages
         while True:
             try:
                 message = await websocket.receive_text()
