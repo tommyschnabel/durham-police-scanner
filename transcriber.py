@@ -43,7 +43,8 @@ class WhisperTranscriber:
         compute_type: str = "int8",
         language: Optional[str] = "en",
         beam_size: int = 5,
-        vad_filter: bool = True
+        vad_filter: bool = True,
+        initial_prompt: Optional[str] = None
     ):
         """
         Initialize the transcriber.
@@ -55,6 +56,7 @@ class WhisperTranscriber:
             language: Language code (e.g., "en", "auto" for detection)
             beam_size: Beam size for decoding (higher = better quality, slower)
             vad_filter: Enable voice activity detection filtering
+            initial_prompt: Optional prompt to guide transcription with domain vocabulary
         """
         self.model_size = model_size
         self.device = device
@@ -62,6 +64,7 @@ class WhisperTranscriber:
         self.language = None if language == "auto" else language
         self.beam_size = beam_size
         self.vad_filter = vad_filter
+        self.initial_prompt = initial_prompt
         
         logger.info(f"Loading Whisper model: {model_size} on {device}")
         self.model = WhisperModel(
@@ -98,7 +101,7 @@ class WhisperTranscriber:
             segments, info = self.model.transcribe(
                 audio,
                 language=self.language,
-                initial_prompt=init_prompt if init_prompt else None,
+                initial_prompt=self.initial_prompt,
                 beam_size=self.beam_size,
                 word_timestamps=True,
                 condition_on_previous_text=True,
@@ -113,12 +116,15 @@ class WhisperTranscriber:
                 if segment.no_speech_prob > 0.9:
                     continue
                 
-                # Calculate average word confidence
-                avg_confidence = 1.0
+                # Calculate average word confidence from actual word probabilities
+                avg_confidence = 1.0 - segment.no_speech_prob
                 if segment.words:
-                    # faster-whisper doesn't give per-word confidence directly
-                    # but we can use the segment's overall confidence
-                    avg_confidence = 1.0 - segment.no_speech_prob
+                    word_confidences = []
+                    for word in segment.words:
+                        if hasattr(word, 'probability'):
+                            word_confidences.append(word.probability)
+                    if word_confidences:
+                        avg_confidence = sum(word_confidences) / len(word_confidences)
                 
                 results.append(TranscriptionSegment(
                     text=segment.text.strip(),
@@ -167,7 +173,7 @@ class WhisperTranscriber:
                 results = segments
             
             # Trim buffer - keep overlap for context
-            overlap_samples = int(2.0 * 16000)  # Keep last 2 seconds
+            overlap_samples = int(2.0 * 16000)  # Keep last 2 seconds for continuity
             if len(self.audio_buffer) > overlap_samples:
                 self.buffer_offset += (len(self.audio_buffer) - overlap_samples) / 16000
                 self.audio_buffer = self.audio_buffer[-overlap_samples:]

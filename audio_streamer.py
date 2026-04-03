@@ -99,7 +99,7 @@ class AudioStreamReader:
             # Try to load as MP3 (most common for radio streams)
             audio = AudioSegment.from_mp3(buffer)
             return len(audio)
-        except:
+        except Exception:
             # If we can't parse yet, estimate based on typical bitrate
             # Radio streams are usually 128 kbps = 16 KB/s
             buffer_size = buffer.tell()
@@ -118,7 +118,7 @@ class AudioStreamReader:
                     buffer.seek(0)
                     audio = AudioSegment.from_file(buffer, format=format_name)
                     break
-                except:
+                except Exception:
                     continue
             
             if audio is None:
@@ -156,7 +156,7 @@ class AudioStreamReader:
                 new_buffer = io.BytesIO()
                 overlap_audio.export(new_buffer, format='mp3')
                 return new_buffer
-        except:
+        except Exception:
             pass
         
         return io.BytesIO()

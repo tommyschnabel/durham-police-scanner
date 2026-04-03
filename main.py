@@ -6,6 +6,7 @@ import asyncio
 import logging
 import json
 import os
+import threading
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 from typing import Optional
@@ -24,14 +25,14 @@ from transcript_storage import TranscriptManager
 
 # Configuration with defaults (can be overridden via environment variables)
 STREAM_URL = os.environ.get('STREAM_URL', 'https://stream.durhampolicescanner.com/')
-WHISPER_MODEL = os.environ.get('WHISPER_MODEL', 'base')
+WHISPER_MODEL = os.environ.get('WHISPER_MODEL', 'medium')
 WHISPER_DEVICE = os.environ.get('WHISPER_DEVICE', 'cpu')
 WHISPER_COMPUTE_TYPE = os.environ.get('WHISPER_COMPUTE_TYPE', 'int8')
 LANGUAGE = os.environ.get('LANGUAGE', 'en')
 HOST = os.environ.get('HOST', '0.0.0.0')
 PORT = int(os.environ.get('PORT', '8000'))
 CHUNK_DURATION_MS = int(os.environ.get('CHUNK_DURATION_MS', '5000'))
-OVERLAP_MS = int(os.environ.get('OVERLAP_MS', '1000'))
+OVERLAP_SECONDS = int(os.environ.get('OVERLAP_SECONDS', '2'))
 SAMPLE_RATE = int(os.environ.get('SAMPLE_RATE', '16000'))
 OUTPUT_FILE = os.environ.get('OUTPUT_FILE', 'transcripts/transcript.jsonl')
 MAX_LOG_SIZE_MB = float(os.environ.get('MAX_LOG_SIZE_MB', '100'))
@@ -39,10 +40,38 @@ LOG_RETENTION_DAYS = int(os.environ.get('LOG_RETENTION_DAYS', '7'))
 LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
 WS_HISTORY_LIMIT = int(os.environ.get('WS_HISTORY_LIMIT', '100'))
 
-# Static list of phrases to exclude from logging
+# Domain-specific vocabulary to improve transcription accuracy
+WHISPER_INITIAL_PROMPT = (
+    "Durham Police Department, officer, dispatch, suspect, vehicle, license plate, "
+    "unit, backup, 10-4, 10-20, 10-code, felony, misdemeanor, traffic stop, "
+    "warrant, arrest, incident, location, address, description, "
+    "North Carolina, Raleigh, Chapel Hill, Durham, "
+    "sheriff, deputy, patrol, sergeant, lieutenant, captain, "
+    "emergency, 911, dispatch center, radio check, copy that, "
+    "affirmative, negative, stand by, roger"
+)
+
+# Common corrections for frequently misrecognized terms
+TEXT_CORRECTIONS = {
+    "durham police": "Durham Police",
+    "durham pd": "Durham PD",
+    "10 4": "10-4",
+    "10 20": "10-20",
+    "ten four": "10-4",
+    "ten twenty": "10-20",
+}
+
+# Phrases that should always be skipped (case-insensitive matching)
 EXCLUDED_PHRASES = [
-    "Thanks for watching!",
+    "thanks for watching!",
 ]
+
+# Important single words that should NOT be filtered
+IMPORTANT_SINGLE_WORDS = {
+    "stop", "help", "fire", "gun", "shots", "weapon", "knife", "bomb",
+    "emergency", "officer", "down", "hurt", "bleeding", "chase", "pursuit",
+    "shots fired", "gunshots",
+}
 
 # Configure logging
 logging.basicConfig(
@@ -59,6 +88,7 @@ connection_manager = ConnectionManager()
 transcription_task: Optional[asyncio.Task] = None
 latest_transcript: list = []
 last_broadcast_text: str = ""
+state_lock = threading.Lock()  # Protects latest_transcript and last_broadcast_text
 
 # Thread-safe message queue for WebSocket broadcasts
 broadcast_queue: asyncio.Queue = asyncio.Queue()
@@ -84,6 +114,29 @@ def process_audio_chunk_threadsafe(transcriber, audio_chunk, transcript_manager)
     return segments
 
 
+def apply_text_corrections(text: str) -> str:
+    """Apply domain-specific text corrections."""
+    text_lower = text.lower()
+    for wrong, correct in TEXT_CORRECTIONS.items():
+        if wrong in text_lower:
+            text = text.replace(wrong, correct)
+            text_lower = text.lower()
+    return text
+
+
+def should_filter_single_word(text: str, confidence: float) -> bool:
+    """Determine if a single-word entry should be filtered."""
+    words = text.lower().split()
+    if len(words) >= 2:
+        return False
+    single_word = words[0].lower().rstrip('.,!?')
+    if single_word in IMPORTANT_SINGLE_WORDS:
+        return False
+    if confidence >= 0.8:
+        return False
+    return True
+
+
 def stream_audio_sync(audio_reader, transcriber, transcript_manager):
     """Synchronous audio streaming and transcription loop."""
     global latest_transcript, last_broadcast_text
@@ -107,14 +160,17 @@ def stream_audio_sync(audio_reader, transcriber, transcript_manager):
                     logger.debug("Duplicate message, skipping broadcast")
                     continue
 
-                # Skip excluded phrases
-                if segment_text in EXCLUDED_PHRASES:
+                # Skip excluded phrases (case-insensitive)
+                if segment_text.lower() in EXCLUDED_PHRASES:
                     logger.debug(f"Excluded phrase detected, skipping: {segment_text}")
                     continue
 
-                # Skip one-word entries
-                if len(segment_text.split()) < 2:
-                    logger.debug(f"Single word entry, skipping: {segment_text}")
+                # Apply domain-specific text corrections
+                segment_text = apply_text_corrections(segment_text)
+
+                # Filter low-value single-word entries but keep important ones
+                if should_filter_single_word(segment_text, segment.confidence):
+                    logger.debug(f"Low-value single word entry, skipping: {segment_text}")
                     continue
                 
                 # Create entry
@@ -128,7 +184,8 @@ def stream_audio_sync(audio_reader, transcriber, transcript_manager):
                 }
                 
                 # Update last broadcast text
-                last_broadcast_text = segment_text
+                with state_lock:
+                    last_broadcast_text = segment_text
                 
                 # Log to console
                 logger.info(f"[{segment.timestamp.strftime('%H:%M:%S')}] {segment_text}")
@@ -136,10 +193,11 @@ def stream_audio_sync(audio_reader, transcriber, transcript_manager):
                 # Save to file
                 transcript_manager.write_entry(entry)
                 
-                # Update latest transcript (keep last 100) - threadsafe
-                latest_transcript.append(entry)
-                if len(latest_transcript) > 100:
-                    latest_transcript[:] = latest_transcript[-100:]
+                # Update latest transcript (keep last 100) - thread-safe
+                with state_lock:
+                    latest_transcript.append(entry)
+                    if len(latest_transcript) > 100:
+                        latest_transcript[:] = latest_transcript[-100:]
                 
                 # Add to broadcast queue (thread-safe)
                 try:
@@ -180,7 +238,8 @@ async def transcription_worker():
         device=WHISPER_DEVICE,
         compute_type=WHISPER_COMPUTE_TYPE,
         language=LANGUAGE if LANGUAGE != 'auto' else None,
-        vad_filter=False
+        vad_filter=True,
+        initial_prompt=WHISPER_INITIAL_PROMPT
     ))
     logger.info("Whisper model loaded successfully")
     
@@ -279,12 +338,14 @@ async def get_dashboard(request: Request):
 @app.get("/api/status")
 async def get_status():
     """Get current system status."""
+    with state_lock:
+        entries_snapshot = list(latest_transcript[-10:])
     return {
         "status": "running" if transcription_task and not transcription_task.done() else "stopped",
         "stream_url": STREAM_URL,
         "model": WHISPER_MODEL,
         "connected_clients": len(connection_manager.active_connections),
-        "latest_entries": latest_transcript[-10:]
+        "latest_entries": entries_snapshot
     }
 
 
@@ -295,9 +356,11 @@ async def websocket_endpoint(websocket: WebSocket):
     
     try:
         # Send recent history to new client
+        with state_lock:
+            history_snapshot = list(latest_transcript[-WS_HISTORY_LIMIT:])
         await websocket.send_json({
             "type": "history",
-            "entries": latest_transcript[-WS_HISTORY_LIMIT:]
+            "entries": history_snapshot
         })
         
         # Keep connection alive and handle client messages
