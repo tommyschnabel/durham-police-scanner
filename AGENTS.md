@@ -62,14 +62,20 @@ docker build -t durham-police-transcriber .
    - `WhisperTranscriber` class using faster-whisper
    - `TranscriptionSegment` dataclass for results
    - Sliding window buffer management
-   - Processes 5-second chunks with 2-second overlap
+   - Processes 60-second chunks with 5-second overlap (optimized for large models)
 
-4. **connection_manager.py** - WebSocket client management
+4. **summary_generator.py** - AI-powered summary generation
+   - `SummaryGenerator` class using Kilo API
+   - Summarizes transcript activity every 5 minutes
+   - Requires `KILO_API_KEY` environment variable
+   - Displays summaries in the web dashboard
+
+5. **connection_manager.py** - WebSocket client management
    - `ConnectionManager` class
    - Broadcasts to multiple connected clients
    - Handles disconnections gracefully
 
-5. **transcript_storage.py** - File logging
+6. **transcript_storage.py** - File logging
    - `TranscriptManager` class
    - JSON Lines format (JSONL)
    - Log rotation at 100MB
@@ -91,8 +97,8 @@ All configuration uses environment variables with sensible defaults. **No `.env`
 |----------|---------|-------------|
 | `STREAM_URL` | `https://stream.durhampolicescanner.com/` | Audio stream URL |
 | `SAMPLE_RATE` | `16000` | Audio sample rate in Hz |
-| `CHUNK_DURATION_MS` | `5000` | Audio chunk size in milliseconds |
-| `OVERLAP_MS` | `1000` | Buffer overlap in milliseconds |
+| `CHUNK_DURATION_MS` | `60000` | Audio chunk size in milliseconds (default: 60s for large models) |
+| `OVERLAP_MS` | `5000` | Buffer overlap in milliseconds |
 | `WHISPER_MODEL` | `base` | Model size: tiny/base/small/medium/large-v1/2/3 |
 | `WHISPER_DEVICE` | `cpu` | cpu or cuda |
 | `WHISPER_COMPUTE_TYPE` | `int8` | int8, int8_float16, float16, float32 |
@@ -104,6 +110,10 @@ All configuration uses environment variables with sensible defaults. **No `.env`
 | `LOG_RETENTION_DAYS` | `7` | Cleanup threshold |
 | `LOG_LEVEL` | `INFO` | Logging level: DEBUG/INFO/WARNING/ERROR |
 | `WS_HISTORY_LIMIT` | `100` | WebSocket history entries sent on connect |
+| `KILO_API_KEY` | *(none)* | API key for Kilo AI summary generation (optional) |
+| `KILO_MODEL` | `moonshotai/kimi-k2.5` | Kilo model for summaries |
+| `SUMMARY_INTERVAL_MINUTES` | `5` | How often to generate summaries |
+| `SUMMARY_WINDOW_MINUTES` | `5` | How much transcript history to summarize |
 
 ### Overriding Settings
 
