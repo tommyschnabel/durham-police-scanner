@@ -3,6 +3,7 @@ Summary generator using Kilo API to summarize transcript history.
 Generates summaries of recent transcript activity every N minutes.
 """
 import asyncio
+import json
 import logging
 import os
 import time
@@ -230,10 +231,17 @@ class SummaryGenerator:
                     logger.error(f"Kilo API error: {error_msg}")
                     return None
 
+                # TEMPORARY: Log full response for debugging
+                logger.info(f"Full API response: {json.dumps(data, indent=2)[:500]}")
+
                 # Extract content (handle both normal content and reasoning fields)
                 if "choices" in data and len(data["choices"]) > 0:
-                    message = data["choices"][0].get("message", {})
-                    content = message.get("content") or message.get("reasoning") or ""
+                    choice = data["choices"][0]
+                    message = choice.get("message", {})
+
+                    # Only use content field (not reasoning)
+                    content = message.get("content", "")
+
                     summary = content.strip()
                     if summary:
                         logger.info(f"Generated summary: {summary[:100]}...")
@@ -242,7 +250,7 @@ class SummaryGenerator:
                         logger.warning("Empty summary received from API")
                         return None
                 else:
-                    logger.error("No choices in API response")
+                    logger.error(f"No choices in API response")
                     return None
 
             except requests.RequestException as e:

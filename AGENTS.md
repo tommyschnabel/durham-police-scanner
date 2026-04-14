@@ -113,7 +113,7 @@ All configuration uses environment variables with sensible defaults. **No `.env`
 | `KILO_API_KEY` | *(none)* | API key for Kilo AI summary generation (optional) |
 | `KILO_MODEL` | `moonshotai/kimi-k2.5` | Kilo model for summaries |
 | `SUMMARY_INTERVAL_MINUTES` | `5` | How often to generate summaries |
-| `SUMMARY_WINDOW_MINUTES` | `5` | How much transcript history to summarize |
+| `SUMMARY_WINDOW_MINUTES` | `5` | How much transcript history to summarize per summary |
 
 ### Overriding Settings
 
