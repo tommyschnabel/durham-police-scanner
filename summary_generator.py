@@ -24,9 +24,8 @@ class SummaryGenerator:
 
     API_BASE = "https://api.kilo.ai/api/gateway"
 
-    # Free models from Kilo Gateway
-    MODEL_PRIMARY = "arcee-ai/trinity-large-preview:free"
-    MODEL_SECONDARY = "corethink:free"
+    # Model from Kilo Gateway
+    MODEL_PRIMARY = "minimax/minimax-m2.5"
 
     def __init__(
         self,
@@ -185,8 +184,8 @@ class SummaryGenerator:
             "Use present tense. Do not speculate beyond what's in the transcript."
         )
 
-        # Free models need fewer tokens, low temperature
-        max_tokens = 200
+        # Reasoning models need more tokens
+        max_tokens = 10000
         temperature = 0.3
 
         payload = {
@@ -231,16 +230,29 @@ class SummaryGenerator:
                     logger.error(f"Kilo API error: {error_msg}")
                     return None
 
-                # TEMPORARY: Log full response for debugging
-                logger.info(f"Full API response: {json.dumps(data, indent=2)[:500]}")
-
-                # Extract content (handle both normal content and reasoning fields)
+                # Extract content from API response
                 if "choices" in data and len(data["choices"]) > 0:
                     choice = data["choices"][0]
-                    message = choice.get("message", {})
+                    message = choice.get("message") or {}
 
-                    # Only use content field (not reasoning)
-                    content = message.get("content", "")
+                    # Try content first, fallback to reasoning for reasoning models
+                    content = message.get("content")
+                    if not content and message.get("reasoning"):
+                        # Extract from reasoning - look for the actual summary after analysis
+                        reasoning = message.get("reasoning", "")
+                        # Try to find a concise summary at the end of reasoning
+                        lines = reasoning.strip().split('\n')
+                        # Look for short lines that might be the summary (last 2-3 non-empty lines)
+                        non_empty = [l.strip() for l in lines if l.strip()]
+                        if len(non_empty) >= 2:
+                            # Take last 1-2 lines as potential summary
+                            content = ' '.join(non_empty[-2:])
+                        else:
+                            content = reasoning
+
+                    if not content:
+                        logger.warning(f"No content or reasoning in API response")
+                        return None
 
                     summary = content.strip()
                     if summary:
