@@ -164,16 +164,17 @@ class WhisperTranscriber:
         results = []
         
         # Process when we have enough audio or buffer is getting full
-        if buffer_seconds >= 5.0 or buffer_seconds >= max_buffer_seconds:
+        # Default to 60-second chunks for better context with large models
+        if buffer_seconds >= 60.0 or buffer_seconds >= max_buffer_seconds:
             # Get transcription
             segments = self.transcribe_chunk(self.audio_buffer)
-            
+
             # Filter to only return new/updated segments
             if segments:
                 results = segments
-            
-            # Trim buffer - keep overlap for context
-            overlap_samples = int(2.0 * 16000)  # Keep last 2 seconds for continuity
+
+            # Trim buffer - keep 5 seconds overlap for continuity
+            overlap_samples = int(5.0 * 16000)  # Keep last 5 seconds for continuity
             if len(self.audio_buffer) > overlap_samples:
                 self.buffer_offset += (len(self.audio_buffer) - overlap_samples) / 16000
                 self.audio_buffer = self.audio_buffer[-overlap_samples:]

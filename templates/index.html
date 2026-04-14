@@ -122,6 +122,48 @@
             cursor: not-allowed;
         }
         
+        .summary-container {
+            background: #16213e;
+            border-radius: 8px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid #0f3460;
+            margin-bottom: 1rem;
+        }
+
+        .summary-header {
+            background: #0f3460;
+            padding: 0.8rem 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .summary-header h2 {
+            font-size: 1rem;
+            font-weight: 500;
+            color: #00d9ff;
+        }
+
+        .summary-content {
+            padding: 1rem;
+            line-height: 1.6;
+            color: #ddd;
+            min-height: 60px;
+        }
+
+        .summary-content.empty {
+            color: #666;
+            font-style: italic;
+        }
+
+        .summary-timestamp {
+            font-size: 0.75rem;
+            color: #888;
+            margin-top: 0.5rem;
+        }
+
         .transcript-container {
             flex: 1;
             background: #16213e;
@@ -297,12 +339,23 @@
     
     <main>
         <div class="error-message" id="errorMessage"></div>
-        
+
         <div class="controls">
             <button onclick="clearTranscript()">Clear Display</button>
             <button onclick="exportTranscript()">Export JSON</button>
         </div>
-        
+
+        <div class="summary-container">
+            <div class="summary-header">
+                <h2>Recent Activity Summary (Last 5 Minutes)</h2>
+                <span class="entry-count" id="summaryStatus">Waiting for data...</span>
+            </div>
+            <div class="summary-content empty" id="summaryContent">
+                Summary will appear here after enough transcript data is collected (updated every 5 minutes)
+            </div>
+            <div class="summary-timestamp" id="summaryTimestamp"></div>
+        </div>
+
         <div class="transcript-container">
             <div class="transcript-header">
                 <h2>Live Transcript</h2>
@@ -389,9 +442,36 @@
                     addEntry(data, true);
                     break;
 
+                case 'summary':
+                    updateSummary(data);
+                    break;
+
                 case 'pong':
                     // Connection alive
                     break;
+            }
+        }
+
+        function updateSummary(data) {
+            const summaryContent = document.getElementById('summaryContent');
+            const summaryTimestamp = document.getElementById('summaryTimestamp');
+            const summaryStatus = document.getElementById('summaryStatus');
+
+            if (data.summary) {
+                summaryContent.textContent = data.summary;
+                summaryContent.classList.remove('empty');
+
+                if (data.timestamp) {
+                    const time = new Date(data.timestamp).toLocaleTimeString();
+                    summaryTimestamp.textContent = `Generated at ${time}`;
+                }
+
+                if (data.period) {
+                    const entryCount = data.period.entry_count || 0;
+                    summaryStatus.textContent = `${entryCount} entries summarized`;
+                } else {
+                    summaryStatus.textContent = 'Summary active';
+                }
             }
         }
         

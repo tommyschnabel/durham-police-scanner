@@ -22,6 +22,7 @@ from audio_streamer import AudioStreamReader
 from transcriber import WhisperTranscriber, TranscriptionSegment
 from connection_manager import ConnectionManager
 from transcript_storage import TranscriptManager
+from summary_generator import SummaryGenerator
 
 # Configuration with defaults (can be overridden via environment variables)
 STREAM_URL = os.environ.get('STREAM_URL', 'https://stream.durhampolicescanner.com/')
@@ -31,9 +32,13 @@ WHISPER_COMPUTE_TYPE = os.environ.get('WHISPER_COMPUTE_TYPE', 'int8')
 LANGUAGE = os.environ.get('LANGUAGE', 'en')
 HOST = os.environ.get('HOST', '0.0.0.0')
 PORT = int(os.environ.get('PORT', '8000'))
-CHUNK_DURATION_MS = int(os.environ.get('CHUNK_DURATION_MS', '5000'))
-OVERLAP_SECONDS = int(os.environ.get('OVERLAP_SECONDS', '2'))
+CHUNK_DURATION_MS = int(os.environ.get('CHUNK_DURATION_MS', '60000'))  # Default: 60 seconds for better accuracy with large models
+OVERLAP_SECONDS = int(os.environ.get('OVERLAP_SECONDS', '5'))  # 5 second overlap for 60s chunks
 SAMPLE_RATE = int(os.environ.get('SAMPLE_RATE', '16000'))
+KILO_API_KEY = os.environ.get('KILO_API_KEY', '')
+KILO_MODEL = os.environ.get('KILO_MODEL', 'moonshotai/kimi-k2.5')
+SUMMARY_INTERVAL_MINUTES = int(os.environ.get('SUMMARY_INTERVAL_MINUTES', '5'))
+SUMMARY_WINDOW_MINUTES = int(os.environ.get('SUMMARY_WINDOW_MINUTES', '5'))
 OUTPUT_FILE = os.environ.get('OUTPUT_FILE', 'transcripts/transcript.jsonl')
 MAX_LOG_SIZE_MB = float(os.environ.get('MAX_LOG_SIZE_MB', '100'))
 LOG_RETENTION_DAYS = int(os.environ.get('LOG_RETENTION_DAYS', '7'))
@@ -84,11 +89,14 @@ logger = logging.getLogger(__name__)
 audio_reader: Optional[AudioStreamReader] = None
 transcriber: Optional[WhisperTranscriber] = None
 transcript_manager: Optional[TranscriptManager] = None
+summary_generator: Optional[SummaryGenerator] = None
 connection_manager = ConnectionManager()
 transcription_task: Optional[asyncio.Task] = None
+summary_task: Optional[asyncio.Task] = None
 latest_transcript: list = []
+latest_summary: Optional[dict] = None
 last_broadcast_text: str = ""
-state_lock = threading.Lock()  # Protects latest_transcript and last_broadcast_text
+state_lock = threading.Lock()  # Protects latest_transcript, latest_summary, and last_broadcast_text
 
 # Thread-safe message queue for WebSocket broadcasts
 broadcast_queue: asyncio.Queue = asyncio.Queue()
@@ -106,6 +114,47 @@ async def broadcast_worker():
         except Exception as e:
             logger.error(f"Broadcast worker error: {e}")
     logger.info("Broadcast worker stopped")
+
+
+async def summary_worker():
+    """Background task that generates summaries periodically."""
+    global latest_summary
+
+    if not summary_generator or not summary_generator.is_enabled():
+        logger.info("Summary generation disabled (no KILO_API_KEY)")
+        return
+
+    logger.info(f"Starting summary worker (interval: {SUMMARY_INTERVAL_MINUTES} minutes)")
+
+    while True:
+        try:
+            # Wait for the interval
+            await asyncio.sleep(30)  # Check every 30 seconds
+
+            # Try to generate summary
+            summary = await summary_generator.generate_summary()
+            if summary:
+                # Update latest summary
+                with state_lock:
+                    latest_summary = summary
+
+                # Log to console
+                logger.info(f"[SUMMARY] {summary['summary'][:200]}...")
+
+                # Save to file
+                if transcript_manager:
+                    transcript_manager.write_entry(summary)
+
+                # Broadcast to all clients
+                await broadcast_queue.put(summary)
+
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Summary worker error: {e}")
+            await asyncio.sleep(60)  # Wait a minute on error
+
+    logger.info("Summary worker stopped")
 
 
 def process_audio_chunk_threadsafe(transcriber, audio_chunk, transcript_manager):
@@ -140,20 +189,20 @@ def should_filter_single_word(text: str, confidence: float) -> bool:
 def stream_audio_sync(audio_reader, transcriber, transcript_manager):
     """Synchronous audio streaming and transcription loop."""
     global latest_transcript, last_broadcast_text
-    
+
     logger.info("Starting audio streaming loop")
-    
+
     try:
         for audio_chunk in audio_reader.stream_audio():
             # Process audio chunk
             segments = transcriber.process_audio_buffer(audio_chunk)
-            
+
             logger.debug(f"Got {len(segments)} segments from transcription")
             for segment in segments:
                 if not segment.text.strip():
                     logger.debug("Empty segment text, skipping")
                     continue
-                
+
                 # Skip if same as last broadcast
                 segment_text = segment.text.strip()
                 if segment_text == last_broadcast_text:
@@ -172,7 +221,7 @@ def stream_audio_sync(audio_reader, transcriber, transcript_manager):
                 if should_filter_single_word(segment_text, segment.confidence):
                     logger.debug(f"Low-value single word entry, skipping: {segment_text}")
                     continue
-                
+
                 # Create entry
                 entry = {
                     'type': 'transcription',
@@ -182,33 +231,42 @@ def stream_audio_sync(audio_reader, transcriber, transcript_manager):
                     'confidence': segment.confidence,
                     'timestamp': segment.timestamp.isoformat()
                 }
-                
+
                 # Update last broadcast text
                 with state_lock:
                     last_broadcast_text = segment_text
-                
+
                 # Log to console
                 logger.info(f"[{segment.timestamp.strftime('%H:%M:%S')}] {segment_text}")
-                
+
                 # Save to file
                 transcript_manager.write_entry(entry)
-                
-                # Update latest transcript (keep last 100) - thread-safe
+
+                # Update latest transcript (keep last 500) - thread-safe
                 with state_lock:
                     latest_transcript.append(entry)
-                    if len(latest_transcript) > 100:
-                        latest_transcript[:] = latest_transcript[-100:]
-                
+                    if len(latest_transcript) > 500:
+                        latest_transcript[:] = latest_transcript[-500:]
+
+                # Add to summary generator (async - fire and forget)
+                if summary_generator and summary_generator.is_enabled():
+                    try:
+                        asyncio.run_coroutine_threadsafe(
+                            summary_generator.add_transcript(entry),
+                            loop
+                        )
+                    except Exception as e:
+                        logger.debug(f"Failed to add to summary generator: {e}")
+
                 # Add to broadcast queue (thread-safe)
                 try:
-                    # Use asyncio.run_coroutine_threadsafe to put in queue
                     asyncio.run_coroutine_threadsafe(
                         broadcast_queue.put(entry),
                         loop
                     )
                 except Exception as e:
                     logger.error(f"Failed to queue broadcast: {e}")
-                
+
     except Exception as e:
         logger.error(f"Audio streaming error: {e}")
     finally:
@@ -217,20 +275,28 @@ def stream_audio_sync(audio_reader, transcriber, transcript_manager):
 
 async def transcription_worker():
     """Background task that reads audio and performs transcription."""
-    global latest_transcript, loop
-    
+    global latest_transcript, loop, summary_generator, transcript_manager
+
     logger.info("Starting transcription worker")
-    
+
     # Get the event loop
     loop = asyncio.get_running_loop()
-    
+
+    # Initialize summary generator
+    summary_generator = SummaryGenerator(
+        api_key=KILO_API_KEY,
+        model=KILO_MODEL,
+        summary_interval_minutes=SUMMARY_INTERVAL_MINUTES,
+        window_minutes=SUMMARY_WINDOW_MINUTES
+    )
+
     # Initialize audio reader
     audio_reader = AudioStreamReader(
         stream_url=STREAM_URL,
         chunk_duration_ms=CHUNK_DURATION_MS,
         target_sample_rate=16000
     )
-    
+
     # Initialize transcriber in thread pool to avoid blocking
     logger.info("Loading Whisper model (this may take a moment)...")
     transcriber = await loop.run_in_executor(None, lambda: WhisperTranscriber(
@@ -242,14 +308,14 @@ async def transcription_worker():
         initial_prompt=WHISPER_INITIAL_PROMPT
     ))
     logger.info("Whisper model loaded successfully")
-    
+
     # Initialize transcript manager
     transcript_manager = TranscriptManager(
         output_file=OUTPUT_FILE,
         max_size_mb=MAX_LOG_SIZE_MB,
         retention_days=LOG_RETENTION_DAYS
     )
-    
+
     # Run the synchronous streaming loop in a separate thread
     try:
         await loop.run_in_executor(
@@ -282,21 +348,26 @@ async def transcription_worker():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan."""
-    global transcription_task, broadcast_task
-    
+    global transcription_task, broadcast_task, summary_task
+
     # Startup
     logger.info("Starting up Durham Police Scanner Transcriber")
     logger.info(f"Stream URL: {STREAM_URL}")
     logger.info(f"Whisper model: {WHISPER_MODEL} on {WHISPER_DEVICE}")
-    
+    logger.info(f"Chunk duration: {CHUNK_DURATION_MS}ms")
+    logger.info(f"Summary generation: {'enabled' if KILO_API_KEY else 'disabled (set KILO_API_KEY)'}")
+
     # Start broadcast worker
     broadcast_task = asyncio.create_task(broadcast_worker())
-    
+
     # Start transcription in background
     transcription_task = asyncio.create_task(transcription_worker())
-    
+
+    # Start summary worker (will exit immediately if disabled)
+    summary_task = asyncio.create_task(summary_worker())
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down")
     if broadcast_task:
@@ -305,6 +376,12 @@ async def lifespan(app: FastAPI):
             await asyncio.wait_for(broadcast_task, timeout=5.0)
         except asyncio.TimeoutError:
             broadcast_task.cancel()
+    if summary_task:
+        summary_task.cancel()
+        try:
+            await summary_task
+        except asyncio.CancelledError:
+            pass
     if transcription_task:
         transcription_task.cancel()
         try:
@@ -339,29 +416,36 @@ async def get_dashboard(request: Request):
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for real-time transcript updates."""
     await connection_manager.connect(websocket)
-    
+
     try:
         with state_lock:
             history_snapshot = list(latest_transcript[-WS_HISTORY_LIMIT:])
+            current_summary = latest_summary
+
+        # Send transcript history
         await websocket.send_json({
             "type": "history",
             "entries": history_snapshot
         })
-        
+
+        # Send current summary if available
+        if current_summary:
+            await websocket.send_json(current_summary)
+
         while True:
             try:
                 message = await websocket.receive_text()
                 data = json.loads(message)
-                
+
                 if data.get('action') == 'ping':
                     await websocket.send_json({"type": "pong"})
-                    
+
             except json.JSONDecodeError:
                 pass
             except Exception as e:
                 logger.error(f"WebSocket error: {e}")
                 break
-                
+
     except WebSocketDisconnect:
         logger.info("Client disconnected")
     except Exception as e:
