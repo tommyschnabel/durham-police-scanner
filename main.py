@@ -26,7 +26,7 @@ from summary_generator import SummaryGenerator
 
 # Configuration with defaults (can be overridden via environment variables)
 STREAM_URL = os.environ.get('STREAM_URL', 'https://stream.durhampolicescanner.com/')
-WHISPER_MODEL = os.environ.get('WHISPER_MODEL', 'medium')
+WHISPER_MODEL = os.environ.get('WHISPER_MODEL', 'small')
 WHISPER_DEVICE = os.environ.get('WHISPER_DEVICE', 'cpu')
 WHISPER_COMPUTE_TYPE = os.environ.get('WHISPER_COMPUTE_TYPE', 'int8')
 LANGUAGE = os.environ.get('LANGUAGE', 'en')
@@ -36,7 +36,7 @@ CHUNK_DURATION_MS = int(os.environ.get('CHUNK_DURATION_MS', '60000'))  # Default
 OVERLAP_SECONDS = int(os.environ.get('OVERLAP_SECONDS', '5'))  # 5 second overlap for 60s chunks
 SAMPLE_RATE = int(os.environ.get('SAMPLE_RATE', '16000'))
 KILO_API_KEY = os.environ.get('KILO_API_KEY', '')
-KILO_MODEL = os.environ.get('KILO_MODEL', 'moonshotai/kimi-k2.5')
+KILO_MODEL = os.environ.get('KILO_MODEL', 'minimax/minimax-m2.5')
 SUMMARY_INTERVAL_MINUTES = int(os.environ.get('SUMMARY_INTERVAL_MINUTES', '5'))
 SUMMARY_WINDOW_MINUTES = int(os.environ.get('SUMMARY_WINDOW_MINUTES', '5'))
 OUTPUT_FILE = os.environ.get('OUTPUT_FILE', 'transcripts/transcript.jsonl')
@@ -452,6 +452,17 @@ async def websocket_endpoint(websocket: WebSocket):
         logger.error(f"WebSocket error: {e}")
     finally:
         connection_manager.disconnect(websocket)
+
+
+@app.get("/api/status")
+async def get_status():
+    """Health check endpoint for Docker."""
+    return {
+        "status": "healthy",
+        "connected_clients": len(connection_manager.active_connections),
+        "model": WHISPER_MODEL,
+        "device": WHISPER_DEVICE
+    }
 
 
 if __name__ == "__main__":
