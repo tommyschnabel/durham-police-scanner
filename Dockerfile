@@ -38,7 +38,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 WORKDIR /app
 
 # Copy application code
-COPY main.py audio_streamer.py transcriber.py connection_manager.py transcript_storage.py ./
+COPY main.py audio_streamer.py transcriber.py connection_manager.py transcript_storage.py summary_generator.py ./
 COPY templates/ ./templates/
 
 # Create directory for transcripts
