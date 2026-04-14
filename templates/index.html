@@ -10,7 +10,7 @@
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
             background: #1a1a2e;
@@ -19,7 +19,7 @@
             display: flex;
             flex-direction: column;
         }
-        
+
         header {
             background: #16213e;
             padding: 1rem 2rem;
@@ -30,12 +30,12 @@
             flex-wrap: wrap;
             gap: 1rem;
         }
-        
+
         header h1 {
             font-size: 1.5rem;
             color: #e94560;
         }
-        
+
         header h1 span {
             color: #0f3460;
             background: #e94560;
@@ -45,7 +45,7 @@
             font-size: 0.7rem;
             text-transform: uppercase;
         }
-        
+
         .status {
             display: flex;
             align-items: center;
@@ -53,13 +53,13 @@
             font-size: 0.85rem;
             color: #aaa;
         }
-        
+
         .status-indicator {
             display: flex;
             align-items: center;
             gap: 0.5rem;
         }
-        
+
         .status-dot {
             width: 10px;
             height: 10px;
@@ -67,16 +67,16 @@
             background: #e94560;
             animation: pulse 1.5s infinite;
         }
-        
+
         .status-dot.connected {
             background: #00d9ff;
         }
-        
+
         @keyframes pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
         }
-        
+
         .model-info {
             font-family: 'Courier New', monospace;
             background: #0f3460;
@@ -84,7 +84,7 @@
             border-radius: 4px;
             font-size: 0.8rem;
         }
-        
+
         main {
             flex: 1;
             display: flex;
@@ -94,14 +94,14 @@
             margin: 0 auto;
             width: 100%;
         }
-        
+
         .controls {
             display: flex;
             gap: 1rem;
             margin-bottom: 1rem;
             flex-wrap: wrap;
         }
-        
+
         button {
             background: #0f3460;
             color: #eee;
@@ -112,17 +112,57 @@
             font-size: 0.9rem;
             transition: all 0.2s;
         }
-        
+
         button:hover {
             background: #e94560;
         }
-        
+
         button:disabled {
             opacity: 0.5;
             cursor: not-allowed;
         }
-        
-        .summary-container {
+
+        /* Tab styles */
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #0f3460;
+        }
+
+        .tab {
+            background: transparent;
+            border: none;
+            color: #888;
+            padding: 0.8rem 1.5rem;
+            cursor: pointer;
+            font-size: 1rem;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.2s;
+        }
+
+        .tab:hover {
+            color: #eee;
+        }
+
+        .tab.active {
+            color: #00d9ff;
+            border-bottom-color: #00d9ff;
+        }
+
+        .tab-content {
+            display: none;
+            flex: 1;
+            flex-direction: column;
+        }
+
+        .tab-content.active {
+            display: flex;
+        }
+
+        /* Summary styles */
+        .current-summary {
             background: #16213e;
             border-radius: 8px;
             overflow: hidden;
@@ -132,7 +172,7 @@
             margin-bottom: 1rem;
         }
 
-        .summary-header {
+        .current-summary-header {
             background: #0f3460;
             padding: 0.8rem 1rem;
             display: flex;
@@ -140,30 +180,96 @@
             align-items: center;
         }
 
-        .summary-header h2 {
+        .current-summary-header h2 {
             font-size: 1rem;
             font-weight: 500;
             color: #00d9ff;
         }
 
-        .summary-content {
-            padding: 1rem;
+        .current-summary-content {
+            padding: 1.5rem;
             line-height: 1.6;
             color: #ddd;
-            min-height: 60px;
+            min-height: 80px;
+            font-size: 1.1rem;
         }
 
-        .summary-content.empty {
+        .current-summary-content.empty {
             color: #666;
             font-style: italic;
         }
 
-        .summary-timestamp {
+        .current-summary-timestamp {
             font-size: 0.75rem;
             color: #888;
+            padding: 0 1.5rem 1rem;
+        }
+
+        .summary-history {
+            flex: 1;
+            background: #16213e;
+            border-radius: 8px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid #0f3460;
+        }
+
+        .summary-history-header {
+            background: #0f3460;
+            padding: 0.8rem 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .summary-history-header h2 {
+            font-size: 1rem;
+            font-weight: 500;
+        }
+
+        .summary-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.8rem;
+        }
+
+        .summary-item {
+            background: #1a1a2e;
+            padding: 1rem;
+            border-radius: 6px;
+            border-left: 3px solid #e94560;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .summary-item.new {
+            border-left-color: #00d9ff;
+            background: #1f2d3d;
+        }
+
+        .summary-item-time {
+            font-size: 0.75rem;
+            color: #e94560;
+            font-family: 'Courier New', monospace;
+            margin-bottom: 0.5rem;
+        }
+
+        .summary-item-text {
+            font-size: 1rem;
+            line-height: 1.5;
+            color: #eee;
+        }
+
+        .summary-item-period {
+            font-size: 0.7rem;
+            color: #666;
             margin-top: 0.5rem;
         }
 
+        /* Transcript styles */
         .transcript-container {
             flex: 1;
             background: #16213e;
@@ -173,7 +279,7 @@
             flex-direction: column;
             border: 1px solid #0f3460;
         }
-        
+
         .transcript-header {
             background: #0f3460;
             padding: 0.8rem 1rem;
@@ -181,17 +287,17 @@
             justify-content: space-between;
             align-items: center;
         }
-        
+
         .transcript-header h2 {
             font-size: 1rem;
             font-weight: 500;
         }
-        
+
         .entry-count {
             font-size: 0.8rem;
             color: #aaa;
         }
-        
+
         .transcript {
             flex: 1;
             overflow-y: auto;
@@ -200,7 +306,7 @@
             flex-direction: column;
             gap: 0.5rem;
         }
-        
+
         .entry {
             background: #1a1a2e;
             padding: 0.8rem 1rem;
@@ -209,16 +315,16 @@
             animation: fadeIn 0.3s ease;
             transition: all 0.2s;
         }
-        
+
         .entry:hover {
             background: #1f2937;
         }
-        
+
         .entry.new {
             border-left-color: #00d9ff;
             background: #1f2d3d;
         }
-        
+
         @keyframes fadeIn {
             from {
                 opacity: 0;
@@ -229,39 +335,39 @@
                 transform: translateY(0);
             }
         }
-        
+
         .entry-time {
             font-size: 0.75rem;
             color: #e94560;
             font-family: 'Courier New', monospace;
             margin-bottom: 0.3rem;
         }
-        
+
         .entry-text {
             font-size: 1rem;
             line-height: 1.5;
             color: #eee;
         }
-        
+
         .entry-confidence {
             font-size: 0.7rem;
             color: #666;
             margin-top: 0.3rem;
         }
-        
+
         .empty-state {
             text-align: center;
             padding: 3rem;
             color: #666;
         }
-        
+
         .empty-state svg {
             width: 64px;
             height: 64px;
             margin-bottom: 1rem;
             opacity: 0.5;
         }
-        
+
         footer {
             background: #16213e;
             padding: 1rem;
@@ -270,12 +376,12 @@
             color: #666;
             border-top: 1px solid #0f3460;
         }
-        
+
         footer a {
             color: #e94560;
             text-decoration: none;
         }
-        
+
         .error-message {
             background: #e94560;
             color: white;
@@ -284,40 +390,49 @@
             margin-bottom: 1rem;
             display: none;
         }
-        
+
         .error-message.show {
             display: block;
         }
-        
+
         /* Scrollbar styling */
+        .summary-list::-webkit-scrollbar,
         .transcript::-webkit-scrollbar {
             width: 8px;
         }
-        
+
+        .summary-list::-webkit-scrollbar-track,
         .transcript::-webkit-scrollbar-track {
             background: #1a1a2e;
         }
-        
+
+        .summary-list::-webkit-scrollbar-thumb,
         .transcript::-webkit-scrollbar-thumb {
             background: #0f3460;
             border-radius: 4px;
         }
-        
+
+        .summary-list::-webkit-scrollbar-thumb:hover,
         .transcript::-webkit-scrollbar-thumb:hover {
             background: #e94560;
         }
-        
+
         @media (max-width: 600px) {
             header {
                 padding: 1rem;
             }
-            
+
             header h1 {
                 font-size: 1.2rem;
             }
-            
-            .entry-text {
+
+            .entry-text, .summary-item-text {
                 font-size: 0.95rem;
+            }
+
+            .tab {
+                padding: 0.6rem 1rem;
+                font-size: 0.9rem;
             }
         }
     </style>
@@ -336,106 +451,151 @@
             <div class="model-info" id="modelInfo">Model: {{ model }}</div>
         </div>
     </header>
-    
+
     <main>
         <div class="error-message" id="errorMessage"></div>
 
         <div class="controls">
-            <button onclick="clearTranscript()">Clear Display</button>
+            <button onclick="clearDisplay()">Clear Display</button>
             <button onclick="exportTranscript()">Export JSON</button>
         </div>
 
-        <div class="summary-container">
-            <div class="summary-header">
-                <h2>Recent Activity Summary (Last 5 Minutes)</h2>
-                <span class="entry-count" id="summaryStatus">Waiting for data...</span>
-            </div>
-            <div class="summary-content empty" id="summaryContent">
-                Summary will appear here after enough transcript data is collected (updated every 5 minutes)
-            </div>
-            <div class="summary-timestamp" id="summaryTimestamp"></div>
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('summary')" id="tab-summary">Summary</button>
+            <button class="tab" onclick="switchTab('transcript')" id="tab-transcript">Live Transcript</button>
         </div>
 
-        <div class="transcript-container">
-            <div class="transcript-header">
-                <h2>Live Transcript</h2>
-                <div class="entry-count" id="entryCount">0 entries</div>
+        <!-- Summary Tab -->
+        <div class="tab-content active" id="content-summary">
+            <div class="current-summary">
+                <div class="current-summary-header">
+                    <h2>Current Activity (Last 5 Minutes)</h2>
+                    <span class="entry-count" id="currentSummaryStatus">Waiting for data...</span>
+                </div>
+                <div class="current-summary-content empty" id="currentSummaryContent">
+                    Summary will appear here after enough transcript data is collected. Updates every 5 minutes.
+                </div>
+                <div class="current-summary-timestamp" id="currentSummaryTimestamp"></div>
             </div>
-            <div class="transcript" id="transcript">
-                <div class="empty-state">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="10"></circle>
-                        <line x1="12" y1="8" x2="12" y2="12"></line>
-                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                    </svg>
-                    <p>Waiting for audio stream...</p>
-                    <p style="font-size: 0.85rem; margin-top: 0.5rem;">New transcriptions will appear at the top</p>
+
+            <div class="summary-history">
+                <div class="summary-history-header">
+                    <h2>Recent Activity Reports (Last Hour)</h2>
+                    <span class="entry-count" id="summaryCount">0 reports</span>
+                </div>
+                <div class="summary-list" id="summaryList">
+                    <div class="empty-state">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="8" x2="12" y2="12"></line>
+                            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                        </svg>
+                        <p>Waiting for summaries...</p>
+                        <p style="font-size: 0.85rem; margin-top: 0.5rem">Activity reports will appear here</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Transcript Tab -->
+        <div class="tab-content" id="content-transcript">
+            <div class="transcript-container">
+                <div class="transcript-header">
+                    <h2>Live Transcript</h2>
+                    <div class="entry-count" id="entryCount">0 entries</div>
+                </div>
+                <div class="transcript" id="transcript">
+                    <div class="empty-state">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="8" x2="12" y2="12"></line>
+                            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                        </svg>
+                        <p>Waiting for audio stream...</p>
+                        <p style="font-size: 0.85rem; margin-top: 0.5rem">New transcriptions will appear at the top</p>
+                    </div>
                 </div>
             </div>
         </div>
     </main>
-    
+
     <footer>
         <p>Stream: {{ stream_url }} | Connected clients: <span id="clientCount">0</span></p>
         <p style="margin-top: 0.5rem;">Powered by <a href="https://github.com/SYSTRAN/faster-whisper" target="_blank">faster-whisper</a></p>
     </footer>
-    
+
     <script>
         let ws = null;
         let reconnectInterval = null;
         let entryCount = 0;
+        let summaryCount = 0;
+        let summaryHistory = [];
         const transcriptEl = document.getElementById('transcript');
+        const summaryListEl = document.getElementById('summaryList');
         const statusDot = document.getElementById('statusDot');
         const statusText = document.getElementById('statusText');
         const entryCountEl = document.getElementById('entryCount');
+        const summaryCountEl = document.getElementById('summaryCount');
         const errorMessage = document.getElementById('errorMessage');
-        
+
+        function switchTab(tabName) {
+            // Update tab buttons
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+
+            // Update tab content
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            document.getElementById(`content-${tabName}`).classList.add('active');
+        }
+
         function connect() {
-            // Use wss:// for HTTPS pages, ws:// for HTTP
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsUrl = `${protocol}//${window.location.host}/ws`;
             ws = new WebSocket(wsUrl);
-            
+
             ws.onopen = () => {
                 console.log('WebSocket connected');
                 statusDot.classList.add('connected');
                 statusText.textContent = 'Connected';
                 clearError();
-                
-                // Start ping to keep connection alive
+
                 setInterval(() => {
                     if (ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ action: 'ping' }));
                     }
                 }, 30000);
             };
-            
+
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
                 handleMessage(data);
             };
-            
+
             ws.onclose = () => {
                 console.log('WebSocket disconnected');
                 statusDot.classList.remove('connected');
                 statusText.textContent = 'Reconnecting...';
                 showError('Connection lost. Reconnecting...');
-                
-                // Reconnect after 3 seconds
                 setTimeout(connect, 3000);
             };
-            
+
             ws.onerror = (error) => {
                 console.error('WebSocket error:', error);
                 showError('WebSocket error occurred');
             };
         }
-        
+
         function handleMessage(data) {
             switch (data.type) {
                 case 'history':
-                    // Sort by timestamp descending (newest first), then add
-                    data.entries.slice().sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).forEach(entry => addEntry(entry, false));
+                    data.entries.slice().sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).forEach(entry => {
+                        if (entry.type === 'summary') {
+                            addSummaryToHistory(entry, false);
+                        } else {
+                            addEntry(entry, false);
+                        }
+                    });
                     break;
 
                 case 'transcription':
@@ -443,40 +603,95 @@
                     break;
 
                 case 'summary':
-                    updateSummary(data);
+                    updateCurrentSummary(data);
+                    addSummaryToHistory(data, true);
                     break;
 
                 case 'pong':
-                    // Connection alive
                     break;
             }
         }
 
-        function updateSummary(data) {
-            const summaryContent = document.getElementById('summaryContent');
-            const summaryTimestamp = document.getElementById('summaryTimestamp');
-            const summaryStatus = document.getElementById('summaryStatus');
+        function updateCurrentSummary(data) {
+            const content = document.getElementById('currentSummaryContent');
+            const timestamp = document.getElementById('currentSummaryTimestamp');
+            const status = document.getElementById('currentSummaryStatus');
 
             if (data.summary) {
-                summaryContent.textContent = data.summary;
-                summaryContent.classList.remove('empty');
+                content.textContent = data.summary;
+                content.classList.remove('empty');
 
                 if (data.timestamp) {
                     const time = new Date(data.timestamp).toLocaleTimeString();
-                    summaryTimestamp.textContent = `Generated at ${time}`;
+                    const date = new Date(data.timestamp).toLocaleDateString();
+                    timestamp.textContent = `Generated at ${time} on ${date}`;
                 }
 
                 if (data.period) {
                     const entryCount = data.period.entry_count || 0;
-                    summaryStatus.textContent = `${entryCount} entries summarized`;
+                    const startTime = new Date(data.period.start).toLocaleTimeString();
+                    const endTime = new Date(data.period.end).toLocaleTimeString();
+                    status.textContent = `${entryCount} entries from ${startTime} - ${endTime}`;
                 } else {
-                    summaryStatus.textContent = 'Summary active';
+                    status.textContent = 'Summary active';
                 }
             }
         }
-        
+
+        function addSummaryToHistory(data, isNew) {
+            // Remove empty state on first summary
+            if (summaryCount === 0) {
+                summaryListEl.innerHTML = '';
+            }
+
+            // Check if we already have this summary (by timestamp)
+            const existing = summaryHistory.find(s => s.timestamp === data.timestamp);
+            if (existing) {
+                return; // Skip duplicates
+            }
+
+            summaryHistory.unshift(data); // Add to beginning
+
+            const itemEl = document.createElement('div');
+            itemEl.className = 'summary-item' + (isNew ? ' new' : '');
+
+            const time = new Date(data.timestamp).toLocaleTimeString();
+            const date = new Date(data.timestamp).toLocaleDateString();
+
+            let periodText = '';
+            if (data.period) {
+                const startTime = new Date(data.period.start).toLocaleTimeString();
+                const endTime = new Date(data.period.end).toLocaleTimeString();
+                periodText = `${data.period.entry_count} entries | ${startTime} - ${endTime}`;
+            }
+
+            itemEl.innerHTML = `
+                <div class="summary-item-time">${date} ${time}</div>
+                <div class="summary-item-text">${escapeHtml(data.summary)}</div>
+                ${periodText ? `<div class="summary-item-period">${periodText}</div>` : ''}
+            `;
+
+            // Insert at the top
+            summaryListEl.insertBefore(itemEl, summaryListEl.firstChild);
+
+                summaryCount++;
+                summaryCountEl.textContent = `${summaryCount} reports (last hour)`;
+
+            // Remove 'new' highlight after animation
+            if (isNew) {
+                setTimeout(() => itemEl.classList.remove('new'), 1000);
+            }
+
+            // Limit to last hour (12 summaries at 5-minute intervals)
+            while (summaryListEl.children.length > 12) {
+                summaryListEl.removeChild(summaryListEl.lastChild);
+                summaryHistory.pop();
+                summaryCount--;
+            }
+            summaryCountEl.textContent = `${summaryCount} reports (last hour)`;
+        }
+
         function addEntry(entry, isNew) {
-            // Remove empty state on first entry
             if (entryCount === 0) {
                 transcriptEl.innerHTML = '';
             }
@@ -494,7 +709,6 @@
                 <div class="entry-confidence">Confidence: ${confidence}%</div>
             `;
 
-            // Insert in timestamp-sorted order (newest first)
             const entryTime = new Date(entry.timestamp).getTime();
             let inserted = false;
             const existingEntries = transcriptEl.querySelectorAll('.entry');
@@ -508,7 +722,6 @@
                 }
             }
 
-            // If not inserted (older than all existing), append to end
             if (!inserted) {
                 transcriptEl.appendChild(entryEl);
             }
@@ -516,24 +729,22 @@
             entryCount++;
             entryCountEl.textContent = `${entryCount} entries`;
 
-            // Remove 'new' highlight after animation
             if (isNew) {
                 setTimeout(() => entryEl.classList.remove('new'), 1000);
             }
 
-            // Limit entries to prevent memory issues (remove oldest from bottom)
             while (transcriptEl.children.length > 500) {
                 transcriptEl.removeChild(transcriptEl.lastChild);
             }
         }
-        
+
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
         }
-        
-        function clearTranscript() {
+
+        function clearDisplay() {
             transcriptEl.innerHTML = `
                 <div class="empty-state">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -547,10 +758,9 @@
             entryCount = 0;
             entryCountEl.textContent = '0 entries';
         }
-        
+
         function exportTranscript() {
             const entries = [];
-            // Export in chronological order (reverse the displayed order)
             const entryElements = Array.from(document.querySelectorAll('.entry')).reverse();
             entryElements.forEach(el => {
                 const text = el.querySelector('.entry-text').textContent;
@@ -571,12 +781,11 @@
             errorMessage.textContent = message;
             errorMessage.classList.add('show');
         }
-        
+
         function clearError() {
             errorMessage.classList.remove('show');
         }
-        
-        // Update client count periodically
+
         async function updateStatus() {
             try {
                 const response = await fetch('/api/status');
@@ -587,13 +796,9 @@
             }
         }
 
-        // Initial connection (WebSocket will send history on connect)
         connect();
-        
-        // Update status every 5 seconds
         setInterval(updateStatus, 5000);
-        
-        // Handle page visibility changes
+
         document.addEventListener('visibilitychange', () => {
             if (!document.hidden && ws.readyState === WebSocket.CLOSED) {
                 connect();
