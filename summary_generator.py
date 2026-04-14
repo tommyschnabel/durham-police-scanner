@@ -3,13 +3,13 @@ Summary generator using Kilo API to summarize transcript history.
 Generates summaries of recent transcript activity every N minutes.
 """
 import asyncio
-import json
 import logging
 import os
+import time
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 
-import aiohttp
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -21,10 +21,16 @@ class SummaryGenerator:
     summaries at regular intervals.
     """
 
+    API_BASE = "https://api.kilo.ai/api/gateway"
+
+    # Free models from Kilo Gateway
+    MODEL_PRIMARY = "arcee-ai/trinity-large-preview:free"
+    MODEL_SECONDARY = "corethink:free"
+
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "moonshotai/kimi-k2.5",
+        model: Optional[str] = None,
         summary_interval_minutes: int = 5,
         window_minutes: int = 5,
     ):
@@ -33,12 +39,12 @@ class SummaryGenerator:
 
         Args:
             api_key: Kilo API key (defaults to KILO_API_KEY env var)
-            model: Kilo model to use for summarization
+            model: Kilo model to use for summarization (defaults to free model)
             summary_interval_minutes: How often to generate summaries (minutes)
             window_minutes: How much transcript history to include in summary (minutes)
         """
         self.api_key = api_key or os.environ.get('KILO_API_KEY')
-        self.model = model
+        self.model = model or self.MODEL_PRIMARY
         self.summary_interval = timedelta(minutes=summary_interval_minutes)
         self.window = timedelta(minutes=window_minutes)
 
@@ -50,7 +56,7 @@ class SummaryGenerator:
             logger.warning("No KILO_API_KEY provided. Summary generation will be disabled.")
 
         logger.info(
-            f"Summary generator initialized: model={model}, "
+            f"Summary generator initialized: model={self.model}, "
             f"interval={summary_interval_minutes}min, window={window_minutes}min"
         )
 
@@ -117,9 +123,12 @@ class SummaryGenerator:
             # Build transcript text
             transcript_text = self._format_transcript(recent_entries)
 
-            # Generate summary via API
+            # Generate summary via API (run in thread pool since requests is blocking)
             try:
-                summary_text = await self._call_kilo_api(transcript_text)
+                loop = asyncio.get_running_loop()
+                summary_text = await loop.run_in_executor(
+                    None, self._call_kilo_api, transcript_text
+                )
                 if summary_text:
                     self.last_summary_time = datetime.now(timezone.utc).astimezone()
 
@@ -158,9 +167,9 @@ class SummaryGenerator:
                     lines.append(text)
         return '\n'.join(lines)
 
-    async def _call_kilo_api(self, transcript_text: str) -> Optional[str]:
-        """Call Kilo API to generate summary."""
-        url = "https://api.kilo.ai/v1/chat/completions"
+    def _call_kilo_api(self, transcript_text: str) -> Optional[str]:
+        """Call Kilo API to generate summary (synchronous, runs in thread pool)."""
+        url = f"{self.API_BASE}/chat/completions"
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -175,34 +184,81 @@ class SummaryGenerator:
             "Use present tense. Do not speculate beyond what's in the transcript."
         )
 
+        # Free models need fewer tokens, low temperature
+        max_tokens = 200
+        temperature = 0.3
+
         payload = {
             "model": self.model,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Summarize the following police scanner transcript:\n\n{transcript_text}"}
             ],
-            "temperature": 0.3,
-            "max_tokens": 200
+            "temperature": temperature,
+            "max_tokens": max_tokens
         }
 
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=30)) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        summary = data.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
+        max_retries = 3
+        base_delay = 1.0
+
+        for attempt in range(max_retries + 1):
+            try:
+                response = requests.post(
+                    url,
+                    headers=headers,
+                    json=payload,
+                    timeout=60
+                )
+
+                # Handle rate limiting
+                if response.status_code == 429:
+                    if attempt < max_retries:
+                        delay = base_delay * (2 ** attempt)
+                        logger.warning(f"Rate limited, waiting {delay}s... (attempt {attempt + 1}/{max_retries})")
+                        time.sleep(delay)
+                        continue
+                    else:
+                        logger.error("Rate limited, max retries exceeded")
+                        return None
+
+                response.raise_for_status()
+                data = response.json()
+
+                # Check for API errors
+                if "error" in data:
+                    error_msg = data["error"].get("message", str(data["error"]))
+                    logger.error(f"Kilo API error: {error_msg}")
+                    return None
+
+                # Extract content (handle both normal content and reasoning fields)
+                if "choices" in data and len(data["choices"]) > 0:
+                    message = data["choices"][0].get("message", {})
+                    content = message.get("content") or message.get("reasoning") or ""
+                    summary = content.strip()
+                    if summary:
                         logger.info(f"Generated summary: {summary[:100]}...")
                         return summary
                     else:
-                        error_text = await response.text()
-                        logger.error(f"Kilo API error: {response.status} - {error_text}")
+                        logger.warning("Empty summary received from API")
                         return None
-        except asyncio.TimeoutError:
-            logger.error("Kilo API request timed out")
-            return None
-        except Exception as e:
-            logger.error(f"Error calling Kilo API: {e}")
-            return None
+                else:
+                    logger.error("No choices in API response")
+                    return None
+
+            except requests.RequestException as e:
+                if attempt < max_retries:
+                    delay = base_delay * (2 ** attempt)
+                    logger.warning(f"Request failed, retrying in {delay}s... ({e})")
+                    time.sleep(delay)
+                    continue
+                else:
+                    logger.error(f"Request failed after {max_retries} retries: {e}")
+                    return None
+            except Exception as e:
+                logger.error(f"Error calling Kilo API: {e}")
+                return None
+
+        return None
 
     async def get_last_summary(self) -> Optional[dict]:
         """Get the most recent summary."""
