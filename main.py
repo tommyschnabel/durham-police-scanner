@@ -95,8 +95,9 @@ transcription_task: Optional[asyncio.Task] = None
 summary_task: Optional[asyncio.Task] = None
 latest_transcript: list = []
 latest_summary: Optional[dict] = None
+latest_summaries: list = []  # History of summaries for new connections
 last_broadcast_text: str = ""
-state_lock = threading.Lock()  # Protects latest_transcript, latest_summary, and last_broadcast_text
+state_lock = threading.Lock()  # Protects latest_transcript, latest_summary, latest_summaries, and last_broadcast_text
 
 # Thread-safe message queue for WebSocket broadcasts
 broadcast_queue: asyncio.Queue = asyncio.Queue()
@@ -134,9 +135,13 @@ async def summary_worker():
             # Try to generate summary
             summary = await summary_generator.generate_summary()
             if summary:
-                # Update latest summary
+                # Update latest summary and add to history
                 with state_lock:
                     latest_summary = summary
+                    latest_summaries.append(summary)
+                    # Keep last 50 summaries (about 4 hours at 5-min intervals)
+                    if len(latest_summaries) > 50:
+                        latest_summaries.pop(0)
 
                 # Log to console
                 logger.info(f"[SUMMARY] {summary['summary'][:200]}...")
@@ -421,6 +426,7 @@ async def websocket_endpoint(websocket: WebSocket):
         with state_lock:
             history_snapshot = list(latest_transcript[-WS_HISTORY_LIMIT:])
             current_summary = latest_summary
+            summaries_snapshot = list(latest_summaries)
 
         # Send transcript history
         await websocket.send_json({
@@ -428,9 +434,15 @@ async def websocket_endpoint(websocket: WebSocket):
             "entries": history_snapshot
         })
 
-        # Send current summary if available
+        # Send summary history (all past summaries)
+        for summary in summaries_snapshot:
+            await websocket.send_json(summary)
+
+        # Send current summary if available and not already sent
         if current_summary:
-            await websocket.send_json(current_summary)
+            # Check if it's already in the history
+            if not summaries_snapshot or summaries_snapshot[-1].get('timestamp') != current_summary.get('timestamp'):
+                await websocket.send_json(current_summary)
 
         while True:
             try:
