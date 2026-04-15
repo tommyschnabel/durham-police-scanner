@@ -481,7 +481,7 @@
 
             <div class="summary-history">
                 <div class="summary-history-header">
-                    <h2>Recent Activity Reports (Last Hour)</h2>
+                    <h2>Recent Activity Reports (Last Few Hours)</h2>
                     <span class="entry-count" id="summaryCount">0 reports</span>
                 </div>
                 <div class="summary-list" id="summaryList">
@@ -682,13 +682,13 @@
                 setTimeout(() => itemEl.classList.remove('new'), 1000);
             }
 
-            // Limit to last hour (12 summaries at 5-minute intervals)
-            while (summaryListEl.children.length > 12) {
+            // Limit to last few hours (36 summaries at 5-minute intervals = 3 hours)
+            while (summaryListEl.children.length > 36) {
                 summaryListEl.removeChild(summaryListEl.lastChild);
                 summaryHistory.pop();
                 summaryCount--;
             }
-            summaryCountEl.textContent = `${summaryCount} reports (last hour)`;
+            summaryCountEl.textContent = `${summaryCount} reports (last 3 hours)`;
         }
 
         function addEntry(entry, isNew) {
