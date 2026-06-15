@@ -1,6 +1,6 @@
 # Multi-stage build for smaller image
 # Use CUDA-enabled base image for GPU support (can also run on CPU)
-FROM nvidia/cuda:12.9.2-devel-ubuntu22.04 AS builder
+FROM nvidia/cuda:13.3.0-devel-ubuntu22.04 AS builder
 
 # Install Python and build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -19,7 +19,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Final stage - CUDA runtime for GPU support
-FROM nvidia/cuda:12.9.2-runtime-ubuntu22.04
+FROM nvidia/cuda:13.3.0-runtime-ubuntu22.04
 
 # Install Python and runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
