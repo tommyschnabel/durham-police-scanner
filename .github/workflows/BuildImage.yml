@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - ci/gate-publish-on-github
   workflow_dispatch:
 
 env:
@@ -19,13 +18,6 @@ jobs:
       packages: write
 
     steps:
-      - name: DEBUG probe runner identity
-        run: |
-          echo "server_url=[${{ github.server_url }}]"
-          echo "GITHUB_SERVER_URL=[$GITHUB_SERVER_URL]"
-          echo "GITEA_ACTIONS=[$GITEA_ACTIONS]"
-          echo "gate_evaluates_to=[${{ github.server_url == 'https://github.com' }}]"
-
       - name: Checkout repository
         uses: actions/checkout@v7
 
