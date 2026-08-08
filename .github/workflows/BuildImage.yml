@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+  # Renovate's branches only get a build check via the PR, and an image that
+  # does not build should never reach main.
+  pull_request:
   workflow_dispatch:
 
 env:
@@ -34,7 +37,7 @@ jobs:
 
       # Self-hosted runners have no GHCR credentials, so they build only.
       - name: Log in to GitHub Container Registry (GHCR)
-        if: github.server_url == 'https://github.com'
+        if: github.server_url == 'https://github.com' && github.event_name != 'pull_request'
         uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
@@ -54,7 +57,9 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          push: ${{ github.server_url == 'https://github.com' }}
+          # Pull requests are build-validation only: nothing is published
+          # until the change is on main.
+          push: ${{ github.server_url == 'https://github.com' && github.event_name != 'pull_request' }}
           # arm64 needs QEMU binfmt, which only the hosted runners preregister.
           platforms: ${{ github.server_url == 'https://github.com' && 'linux/amd64,linux/arm64/v8' || 'linux/amd64' }}
           tags: ${{ steps.meta.outputs.tags }}
