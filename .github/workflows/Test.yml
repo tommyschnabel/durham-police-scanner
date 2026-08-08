@@ -1,0 +1,28 @@
+name: Tests
+
+# Runs on every push and PR, including Renovate's, so a dependency bump that
+# breaks the app fails here instead of on the stream.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: pytest
+        run: pytest -q

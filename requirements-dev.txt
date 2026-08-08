@@ -1,0 +1,7 @@
+# Test-only dependencies, on top of the real runtime requirements so that a
+# Renovate bump is exercised by the tests and not just by the Docker build.
+#
+# faster-whisper is stubbed in tests/conftest.py -- no model is ever loaded.
+-r requirements.txt
+pytest>=8.0
+pytest-asyncio>=0.23

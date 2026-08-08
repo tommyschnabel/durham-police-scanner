@@ -37,3 +37,4 @@ transcripts/*
 
 # Docker volumes
 whisper-cache/
+.pytest_cache/
