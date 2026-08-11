@@ -2,5 +2,12 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended"
+  ],
+  "packageRules": [
+    {
+      "description": "numba (via librosa) declares numpy<2.5, so a numpy 2.5 bump resolves to an ancient numba and fails to build. Re-enable once numba lifts the cap.",
+      "matchPackageNames": ["numpy"],
+      "enabled": false
+    }
   ]
 }

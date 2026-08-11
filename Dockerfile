@@ -1,17 +1,18 @@
 # Multi-stage build for smaller image
 # Use CUDA-enabled base image for GPU support (can also run on CPU)
-FROM nvidia/cuda:13.3.0-devel-ubuntu22.04 AS builder
+FROM nvidia/cuda:13.3.0-devel-ubuntu24.04 AS builder
 
 # Install Python and build dependencies
+# 24.04 (python3.12) rather than 22.04 (python3.11): numpy 2.5 requires 3.12+.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.11 \
-    python3.11-venv \
+    python3.12 \
+    python3.12-venv \
     python3-pip \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Create virtual environment
-RUN python3.11 -m venv /opt/venv
+RUN python3.12 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Install Python dependencies
@@ -19,16 +20,16 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Final stage - CUDA runtime for GPU support
-FROM nvidia/cuda:13.3.0-runtime-ubuntu22.04
+FROM nvidia/cuda:13.3.0-runtime-ubuntu24.04
 
 # Install Python and runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.11 \
+    python3.12 \
     python3-pip \
     ffmpeg \
     libsndfile1 \
     && rm -rf /var/lib/apt/lists/* \
-    && ln -s /usr/bin/python3.11 /usr/bin/python
+    && ln -s /usr/bin/python3.12 /usr/bin/python
 
 # Copy virtual environment from builder
 COPY --from=builder /opt/venv /opt/venv
