@@ -162,49 +162,6 @@
         }
 
         /* Summary styles */
-        .current-summary {
-            background: #16213e;
-            border-radius: 8px;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-            border: 1px solid #0f3460;
-            margin-bottom: 1rem;
-        }
-
-        .current-summary-header {
-            background: #0f3460;
-            padding: 0.8rem 1rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .current-summary-header h2 {
-            font-size: 1rem;
-            font-weight: 500;
-            color: #00d9ff;
-        }
-
-        .current-summary-content {
-            padding: 1.5rem;
-            line-height: 1.6;
-            color: #ddd;
-            min-height: 80px;
-            font-size: 1.1rem;
-        }
-
-        .current-summary-content.empty {
-            color: #666;
-            font-style: italic;
-        }
-
-        .current-summary-timestamp {
-            font-size: 0.75rem;
-            color: #888;
-            padding: 0 1.5rem 1rem;
-        }
-
         .summary-history {
             flex: 1;
             background: #16213e;
@@ -468,20 +425,9 @@
 
         <!-- Summary Tab -->
         <div class="tab-content active" id="content-summary">
-            <div class="current-summary">
-                <div class="current-summary-header">
-                    <h2>Current Activity (Last 5 Minutes)</h2>
-                    <span class="entry-count" id="currentSummaryStatus">Waiting for data...</span>
-                </div>
-                <div class="current-summary-content empty" id="currentSummaryContent">
-                    Summary will appear here after enough transcript data is collected. Updates every 5 minutes.
-                </div>
-                <div class="current-summary-timestamp" id="currentSummaryTimestamp"></div>
-            </div>
-
             <div class="summary-history">
                 <div class="summary-history-header">
-                    <h2>Recent Activity Reports (Last Few Hours)</h2>
+                    <h2>Recent Activity Reports <span id="summarySpan"></span></h2>
                     <span class="entry-count" id="summaryCount">0 reports</span>
                 </div>
                 <div class="summary-list" id="summaryList">
@@ -589,7 +535,10 @@
         function handleMessage(data) {
             switch (data.type) {
                 case 'history':
-                    data.entries.slice().sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).forEach(entry => {
+                    // Oldest first: summaries are prepended, so the newest ends up
+                    // on top and the 36-item trim drops the oldest. Transcript
+                    // entries insert by timestamp and don't care.
+                    data.entries.slice().sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)).forEach(entry => {
                         if (entry.type === 'summary') {
                             addSummaryToHistory(entry, false);
                         } else {
@@ -603,38 +552,11 @@
                     break;
 
                 case 'summary':
-                    updateCurrentSummary(data);
                     addSummaryToHistory(data, true);
                     break;
 
                 case 'pong':
                     break;
-            }
-        }
-
-        function updateCurrentSummary(data) {
-            const content = document.getElementById('currentSummaryContent');
-            const timestamp = document.getElementById('currentSummaryTimestamp');
-            const status = document.getElementById('currentSummaryStatus');
-
-            if (data.summary) {
-                content.textContent = data.summary;
-                content.classList.remove('empty');
-
-                if (data.timestamp) {
-                    const time = new Date(data.timestamp).toLocaleTimeString();
-                    const date = new Date(data.timestamp).toLocaleDateString();
-                    timestamp.textContent = `Generated at ${time} on ${date}`;
-                }
-
-                if (data.period) {
-                    const entryCount = data.period.entry_count || 0;
-                    const startTime = new Date(data.period.start).toLocaleTimeString();
-                    const endTime = new Date(data.period.end).toLocaleTimeString();
-                    status.textContent = `${entryCount} entries from ${startTime} - ${endTime}`;
-                } else {
-                    status.textContent = 'Summary active';
-                }
             }
         }
 
@@ -675,7 +597,6 @@
             summaryListEl.insertBefore(itemEl, summaryListEl.firstChild);
 
                 summaryCount++;
-                summaryCountEl.textContent = `${summaryCount} reports (last hour)`;
 
             // Remove 'new' highlight after animation
             if (isNew) {
@@ -688,7 +609,25 @@
                 summaryHistory.pop();
                 summaryCount--;
             }
-            summaryCountEl.textContent = `${summaryCount} reports (last 3 hours)`;
+            summaryCountEl.textContent = `${summaryCount} report${summaryCount === 1 ? '' : 's'}`;
+            updateSummarySpan();
+        }
+
+        // Heading shows how much time the listed reports actually cover, from
+        // the start of the oldest report's window to the end of the newest.
+        function updateSummarySpan() {
+            const starts = summaryHistory.map(s => new Date((s.period && s.period.start) || s.timestamp).getTime());
+            const ends = summaryHistory.map(s => new Date((s.period && s.period.end) || s.timestamp).getTime());
+            const el = document.getElementById('summarySpan');
+            if (!starts.length) {
+                el.textContent = '';
+                return;
+            }
+            const minutes = Math.max(1, Math.round((Math.max(...ends) - Math.min(...starts)) / 60000));
+            const h = Math.floor(minutes / 60);
+            const m = minutes % 60;
+            const span = h ? (m ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
+            el.textContent = `(Last ${span})`;
         }
 
         function addEntry(entry, isNew) {
