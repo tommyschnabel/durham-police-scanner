@@ -35,8 +35,7 @@ PORT = int(os.environ.get('PORT', '8000'))
 CHUNK_DURATION_MS = int(os.environ.get('CHUNK_DURATION_MS', '60000'))  # Default: 60 seconds for better accuracy with large models
 OVERLAP_SECONDS = int(os.environ.get('OVERLAP_SECONDS', '5'))  # 5 second overlap for 60s chunks
 SAMPLE_RATE = int(os.environ.get('SAMPLE_RATE', '16000'))
-KILO_API_KEY = os.environ.get('KILO_API_KEY', '')
-KILO_MODEL = os.environ.get('KILO_MODEL', 'minimax/minimax-m2.5')
+LLM_BASE_URL = os.environ.get('LLM_BASE_URL', '')
 SUMMARY_INTERVAL_MINUTES = int(os.environ.get('SUMMARY_INTERVAL_MINUTES', '5'))
 SUMMARY_WINDOW_MINUTES = int(os.environ.get('SUMMARY_WINDOW_MINUTES', '5'))
 OUTPUT_FILE = os.environ.get('OUTPUT_FILE', 'transcripts/transcript.jsonl')
@@ -122,7 +121,7 @@ async def summary_worker():
     global latest_summary
 
     if not summary_generator or not summary_generator.is_enabled():
-        logger.info("Summary generation disabled (no KILO_API_KEY)")
+        logger.info("Summary generation disabled (no LLM_BASE_URL)")
         return
 
     logger.info(f"Starting summary worker (interval: {SUMMARY_INTERVAL_MINUTES} minutes)")
@@ -289,8 +288,7 @@ async def transcription_worker():
 
     # Initialize summary generator
     summary_generator = SummaryGenerator(
-        api_key=KILO_API_KEY,
-        model=KILO_MODEL,
+        base_url=LLM_BASE_URL,
         summary_interval_minutes=SUMMARY_INTERVAL_MINUTES,
         window_minutes=SUMMARY_WINDOW_MINUTES
     )
@@ -360,7 +358,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"Stream URL: {STREAM_URL}")
     logger.info(f"Whisper model: {WHISPER_MODEL} on {WHISPER_DEVICE}")
     logger.info(f"Chunk duration: {CHUNK_DURATION_MS}ms")
-    logger.info(f"Summary generation: {'enabled' if KILO_API_KEY else 'disabled (set KILO_API_KEY)'}")
+    logger.info(f"Summary generation: {'enabled' if LLM_BASE_URL else 'disabled (set LLM_BASE_URL)'}")
 
     # Start broadcast worker
     broadcast_task = asyncio.create_task(broadcast_worker())

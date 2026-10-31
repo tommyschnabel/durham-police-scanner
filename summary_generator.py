@@ -1,36 +1,68 @@
 """
-Summary generator using Kilo API to summarize transcript history.
+Summary generator that summarizes transcript history through any
+OpenAI-compatible chat completions endpoint (e.g. llama.cpp's llama-server).
 Generates summaries of recent transcript activity every N minutes.
 """
 import asyncio
-import json
 import logging
 import os
+import re
 import time
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 
 import requests
 
+from summary_prompt import build_messages
+
 logger = logging.getLogger(__name__)
+
+# Lead-ins and filler sentences small models add despite the prompt, e.g.
+# "Based on the provided transcript, ..." or "No officer safety concerns are
+# mentioned."
+_LEAD_IN = re.compile(
+    r'^(based on|according to|from) the (provided |given )?(police scanner )?(transcript|traffic)[^,]*,\s*',
+    re.I,
+)
+_FILLER = re.compile(
+    r'^(no |there (are|is) no |the transcript|this transcript|details remain|it is unclear)'
+    r'|(not |no )(explicitly )?(mentioned|stated|detailed|evident|described|specified|noted|identified|reported)',
+    re.I,
+)
+
+
+def clean_summary(content: Optional[str]) -> str:
+    """Reduce a model reply to the bare summary paragraph."""
+    text = content or ''
+    # With thinking disabled, Nanbeige sometimes still writes a draft, closes
+    # an unopened </think>, and then gives its real answer.
+    if '</think>' in text:
+        text = text.rsplit('</think>', 1)[1]
+    text = re.sub(r'^\s*\**summary:?\**:?\s*', '', text.strip(), flags=re.I)
+    text = re.sub(r'\n+\s*\(?\*?\*?note:.*$', '', text, flags=re.I | re.S)
+    text = re.split(r'\n\s*\n', text.strip())[0]
+    text = _LEAD_IN.sub('', text)
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    kept = [s for s in sentences if not _FILLER.search(s)] or sentences[:1]
+    text = ' '.join(kept)
+    return (text[:1].upper() + text[1:]).strip()
 
 
 class SummaryGenerator:
     """
-    Generates summaries of transcript activity using Kilo API.
+    Generates summaries of transcript activity using an OpenAI-compatible API.
     Maintains a rolling window of transcripts and generates
     summaries at regular intervals.
     """
 
-    API_BASE = "https://api.kilo.ai/api/gateway"
-
-    # Model from Kilo Gateway
-    MODEL_PRIMARY = "minimax/minimax-m2.5"
+    DEFAULT_MODEL = "nanbeige-4.2-3b"
 
     def __init__(
         self,
+        base_url: Optional[str] = None,
         api_key: Optional[str] = None,
         model: Optional[str] = None,
+        disable_thinking: Optional[bool] = None,
         summary_interval_minutes: int = 5,
         window_minutes: int = 5,
     ):
@@ -38,13 +70,21 @@ class SummaryGenerator:
         Initialize the summary generator.
 
         Args:
-            api_key: Kilo API key (defaults to KILO_API_KEY env var)
-            model: Kilo model to use for summarization (defaults to free model)
+            base_url: OpenAI-compatible API root ending in /v1 (defaults to
+                LLM_BASE_URL env var); summaries are disabled without one
+            api_key: Bearer token, if the server wants one (defaults to LLM_API_KEY)
+            model: Model name to request (defaults to LLM_MODEL, then DEFAULT_MODEL)
+            disable_thinking: Send llama.cpp's enable_thinking=false template
+                kwarg (defaults to LLM_DISABLE_THINKING, on unless "false")
             summary_interval_minutes: How often to generate summaries (minutes)
             window_minutes: How much transcript history to include in summary (minutes)
         """
-        self.api_key = api_key or os.environ.get('KILO_API_KEY')
-        self.model = model or self.MODEL_PRIMARY
+        self.base_url = (base_url or os.environ.get('LLM_BASE_URL') or '').rstrip('/')
+        self.api_key = api_key or os.environ.get('LLM_API_KEY') or None
+        self.model = model or os.environ.get('LLM_MODEL') or self.DEFAULT_MODEL
+        if disable_thinking is None:
+            disable_thinking = os.environ.get('LLM_DISABLE_THINKING', 'true').lower() != 'false'
+        self.disable_thinking = disable_thinking
         self.summary_interval = timedelta(minutes=summary_interval_minutes)
         self.window = timedelta(minutes=window_minutes)
 
@@ -52,17 +92,17 @@ class SummaryGenerator:
         self.last_summary_time: Optional[datetime] = None
         self.lock = asyncio.Lock()
 
-        if not self.api_key:
-            logger.warning("No KILO_API_KEY provided. Summary generation will be disabled.")
+        if not self.base_url:
+            logger.warning("No LLM_BASE_URL provided. Summary generation will be disabled.")
 
         logger.info(
-            f"Summary generator initialized: model={self.model}, "
+            f"Summary generator initialized: base_url={self.base_url}, model={self.model}, "
             f"interval={summary_interval_minutes}min, window={window_minutes}min"
         )
 
     def is_enabled(self) -> bool:
-        """Check if summary generation is enabled (has API key)."""
-        return bool(self.api_key)
+        """Check if summary generation is enabled (has an endpoint)."""
+        return bool(self.base_url)
 
     async def add_transcript(self, entry: dict):
         """Add a transcript entry to history."""
@@ -127,7 +167,7 @@ class SummaryGenerator:
             try:
                 loop = asyncio.get_running_loop()
                 summary_text = await loop.run_in_executor(
-                    None, self._call_kilo_api, transcript_text
+                    None, self._call_llm, transcript_text
                 )
                 if summary_text:
                     self.last_summary_time = datetime.now(timezone.utc).astimezone()
@@ -167,36 +207,24 @@ class SummaryGenerator:
                     lines.append(text)
         return '\n'.join(lines)
 
-    def _call_kilo_api(self, transcript_text: str) -> Optional[str]:
-        """Call Kilo API to generate summary (synchronous, runs in thread pool)."""
-        url = f"{self.API_BASE}/chat/completions"
+    def _call_llm(self, transcript_text: str) -> Optional[str]:
+        """Call the chat completions endpoint (synchronous, runs in thread pool)."""
+        url = f"{self.base_url}/chat/completions"
 
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-
-        system_prompt = (
-            "You are summarizing police scanner radio traffic. "
-            "Provide a brief, factual summary of key events, incidents, and locations mentioned. "
-            "Focus on: emergency calls, traffic stops, incidents in progress, officer safety concerns, "
-            "and any notable locations or descriptions. Be concise - 2-4 sentences maximum. "
-            "Use present tense. Do not speculate beyond what's in the transcript."
-        )
-
-        # Reasoning models need more tokens
-        max_tokens = 10000
-        temperature = 0.3
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
 
         payload = {
             "model": self.model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Summarize the following police scanner transcript:\n\n{transcript_text}"}
-            ],
-            "temperature": temperature,
-            "max_tokens": max_tokens
+            "messages": build_messages(transcript_text),
+            "temperature": 0.3,
+            "max_tokens": 450,
         }
+        if self.disable_thinking:
+            # llama.cpp's llama-server forwards these to the chat template.
+            # Reasoning costs ~40s per summary on a 3B model for no gain.
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
 
         max_retries = 3
         base_delay = 1.0
@@ -207,7 +235,7 @@ class SummaryGenerator:
                     url,
                     headers=headers,
                     json=payload,
-                    timeout=60
+                    timeout=120
                 )
 
                 # Handle rate limiting
@@ -227,43 +255,20 @@ class SummaryGenerator:
                 # Check for API errors
                 if "error" in data:
                     error_msg = data["error"].get("message", str(data["error"]))
-                    logger.error(f"Kilo API error: {error_msg}")
+                    logger.error(f"LLM API error: {error_msg}")
                     return None
 
-                # Extract content from API response
-                if "choices" in data and len(data["choices"]) > 0:
-                    choice = data["choices"][0]
-                    message = choice.get("message") or {}
-
-                    # Try content first, fallback to reasoning for reasoning models
-                    content = message.get("content")
-                    if not content and message.get("reasoning"):
-                        # Extract from reasoning - look for the actual summary after analysis
-                        reasoning = message.get("reasoning", "")
-                        # Try to find a concise summary at the end of reasoning
-                        lines = reasoning.strip().split('\n')
-                        # Look for short lines that might be the summary (last 2-3 non-empty lines)
-                        non_empty = [l.strip() for l in lines if l.strip()]
-                        if len(non_empty) >= 2:
-                            # Take last 1-2 lines as potential summary
-                            content = ' '.join(non_empty[-2:])
-                        else:
-                            content = reasoning
-
-                    if not content:
-                        logger.warning(f"No content or reasoning in API response")
-                        return None
-
-                    summary = content.strip()
-                    if summary:
-                        logger.info(f"Generated summary: {summary[:100]}...")
-                        return summary
-                    else:
-                        logger.warning("Empty summary received from API")
-                        return None
-                else:
-                    logger.error(f"No choices in API response")
+                if not data.get("choices"):
+                    logger.error("No choices in API response")
                     return None
+
+                message = data["choices"][0].get("message") or {}
+                summary = clean_summary(message.get("content"))
+                if summary:
+                    logger.info(f"Generated summary: {summary[:100]}...")
+                    return summary
+                logger.warning("Empty summary received from API")
+                return None
 
             except requests.RequestException as e:
                 if attempt < max_retries:
@@ -275,7 +280,7 @@ class SummaryGenerator:
                     logger.error(f"Request failed after {max_retries} retries: {e}")
                     return None
             except Exception as e:
-                logger.error(f"Error calling Kilo API: {e}")
+                logger.error(f"Error calling LLM API: {e}")
                 return None
 
         return None

@@ -25,6 +25,11 @@ services:
       - MAX_LOG_SIZE_MB=${MAX_LOG_SIZE_MB:-100}
       - LOG_RETENTION_DAYS=${LOG_RETENTION_DAYS:-7}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Summaries: any OpenAI-compatible endpoint, e.g. llama-server
+      - LLM_BASE_URL=${LLM_BASE_URL:-}
+      - LLM_MODEL=${LLM_MODEL:-nanbeige-4.2-3b}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_DISABLE_THINKING=${LLM_DISABLE_THINKING:-true}
     restart: unless-stopped
     # GPU support - remove if running on CPU-only systems
     deploy:

@@ -65,9 +65,11 @@ docker build -t durham-police-transcriber .
    - Processes 60-second chunks with 5-second overlap (optimized for large models)
 
 4. **summary_generator.py** - AI-powered summary generation
-   - `SummaryGenerator` class using Kilo API
+   - `SummaryGenerator` class calling any OpenAI-compatible chat completions
+     endpoint (built and tuned for llama.cpp's `llama-server`)
    - Summarizes transcript activity every 5 minutes
-   - Requires `KILO_API_KEY` environment variable
+   - Enabled by setting `LLM_BASE_URL`
+   - Prompt, Durham radio codes, and few-shot examples live in `summary_prompt.py`
    - Displays summaries in the web dashboard
 
 5. **connection_manager.py** - WebSocket client management
@@ -110,8 +112,10 @@ All configuration uses environment variables with sensible defaults. **No `.env`
 | `LOG_RETENTION_DAYS` | `7` | Cleanup threshold |
 | `LOG_LEVEL` | `INFO` | Logging level: DEBUG/INFO/WARNING/ERROR |
 | `WS_HISTORY_LIMIT` | `100` | WebSocket history entries sent on connect |
-| `KILO_API_KEY` | *(none)* | API key for Kilo AI summary generation (optional) |
-| `KILO_MODEL` | `moonshotai/kimi-k2.5` | Kilo model for summaries |
+| `LLM_BASE_URL` | *(none)* | OpenAI-compatible API root ending in `/v1`, e.g. `http://nanbeige:8080/v1`. Summaries are disabled without it |
+| `LLM_MODEL` | `nanbeige-4.2-3b` | Model name sent with each request |
+| `LLM_API_KEY` | *(none)* | Bearer token, only if the server requires one |
+| `LLM_DISABLE_THINKING` | `true` | Send llama.cpp's `chat_template_kwargs: {enable_thinking: false}`. Set `false` for servers that reject unknown fields |
 | `SUMMARY_INTERVAL_MINUTES` | `5` | How often to generate summaries |
 | `SUMMARY_WINDOW_MINUTES` | `5` | How much transcript history to summarize per summary |
 
