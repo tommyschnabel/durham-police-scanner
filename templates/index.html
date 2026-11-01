@@ -477,6 +477,9 @@
         let entryCount = 0;
         let summaryCount = 0;
         let summaryHistory = [];
+        // Server-side HISTORY_RETENTION_HOURS; older items fall off the page.
+        const RETENTION_MS = {{ retention_hours }} * 3600 * 1000;
+        const seenEntries = new Set();
         const transcriptEl = document.getElementById('transcript');
         const summaryListEl = document.getElementById('summaryList');
         const statusDot = document.getElementById('statusDot');
@@ -536,8 +539,7 @@
             switch (data.type) {
                 case 'history':
                     // Oldest first: summaries are prepended, so the newest ends up
-                    // on top and the 36-item trim drops the oldest. Transcript
-                    // entries insert by timestamp and don't care.
+                    // on top. Transcript entries insert by timestamp and don't care.
                     data.entries.slice().sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)).forEach(entry => {
                         if (entry.type === 'summary') {
                             addSummaryToHistory(entry, false);
@@ -576,6 +578,7 @@
 
             const itemEl = document.createElement('div');
             itemEl.className = 'summary-item' + (isNew ? ' new' : '');
+            itemEl.dataset.timestamp = data.timestamp;
 
             const time = new Date(data.timestamp).toLocaleTimeString();
             const date = new Date(data.timestamp).toLocaleDateString();
@@ -603,14 +606,32 @@
                 setTimeout(() => itemEl.classList.remove('new'), 1000);
             }
 
-            // Limit to last few hours (36 summaries at 5-minute intervals = 3 hours)
-            while (summaryListEl.children.length > 36) {
-                summaryListEl.removeChild(summaryListEl.lastChild);
-                summaryHistory.pop();
-                summaryCount--;
-            }
+            pruneSummaries();
+        }
+
+        function isExpired(timestamp) {
+            return Date.now() - new Date(timestamp).getTime() > RETENTION_MS;
+        }
+
+        function pruneSummaries() {
+            summaryHistory = summaryHistory.filter(s => !isExpired(s.timestamp));
+            summaryListEl.querySelectorAll('.summary-item').forEach(el => {
+                if (isExpired(el.dataset.timestamp)) el.remove();
+            });
+            summaryCount = summaryHistory.length;
             summaryCountEl.textContent = `${summaryCount} report${summaryCount === 1 ? '' : 's'}`;
             updateSummarySpan();
+        }
+
+        function pruneEntries() {
+            transcriptEl.querySelectorAll('.entry').forEach(el => {
+                if (isExpired(el.dataset.timestamp)) {
+                    seenEntries.delete(el.dataset.key);
+                    el.remove();
+                    entryCount--;
+                }
+            });
+            entryCountEl.textContent = `${entryCount} entries`;
         }
 
         // Heading shows how much time the listed reports actually cover, from
@@ -631,6 +652,13 @@
         }
 
         function addEntry(entry, isNew) {
+            // A reconnect re-sends the whole history; skip what's already shown.
+            const key = entry.timestamp + '|' + entry.text;
+            if (seenEntries.has(key) || isExpired(entry.timestamp)) {
+                return;
+            }
+            seenEntries.add(key);
+
             if (entryCount === 0) {
                 transcriptEl.innerHTML = '';
             }
@@ -638,6 +666,7 @@
             const entryEl = document.createElement('div');
             entryEl.className = 'entry' + (isNew ? ' new' : '');
             entryEl.dataset.timestamp = entry.timestamp;
+            entryEl.dataset.key = key;
 
             const time = new Date(entry.timestamp).toLocaleTimeString();
             const confidence = (entry.confidence * 100).toFixed(1);
@@ -672,9 +701,7 @@
                 setTimeout(() => entryEl.classList.remove('new'), 1000);
             }
 
-            while (transcriptEl.children.length > 500) {
-                transcriptEl.removeChild(transcriptEl.lastChild);
-            }
+            pruneEntries();
         }
 
         function escapeHtml(text) {
@@ -696,6 +723,7 @@
             `;
             entryCount = 0;
             entryCountEl.textContent = '0 entries';
+            seenEntries.clear();
         }
 
         function exportTranscript() {
@@ -737,6 +765,8 @@
 
         connect();
         setInterval(updateStatus, 5000);
+        // Age things out even when the feed is quiet.
+        setInterval(() => { pruneEntries(); pruneSummaries(); }, 60000);
 
         document.addEventListener('visibilitychange', () => {
             if (!document.hidden && ws.readyState === WebSocket.CLOSED) {

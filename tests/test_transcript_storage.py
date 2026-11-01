@@ -114,3 +114,42 @@ class TestGetRecentEntries:
     def test_disabled_manager_returns_empty(self, tmp_path):
         m = TranscriptManager(output_file=str(tmp_path / "off.jsonl"), enabled=False)
         assert m.get_recent_entries() == []
+
+
+class TestGetEntriesSince:
+    @staticmethod
+    def stamp(hours_ago):
+        return (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).isoformat()
+
+    def test_only_entries_after_the_cutoff_are_returned(self, manager):
+        manager.write_entry({"type": "transcription", "text": "old", "timestamp": self.stamp(5)})
+        manager.write_entry({"type": "transcription", "text": "new", "timestamp": self.stamp(1)})
+        manager.write_entry({"type": "summary", "summary": "s", "timestamp": self.stamp(0.5)})
+
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=4)
+        got = manager.get_entries_since(cutoff)
+        assert [e.get("text") or e.get("summary") for e in got] == ["new", "s"]
+
+    def test_recent_rotated_files_are_read_oldest_first(self, manager):
+        manager.write_entry({"text": "before rotation", "timestamp": self.stamp(2)})
+        manager._rotate()  # gzips the rotated file
+        manager.write_entry({"text": "after rotation", "timestamp": self.stamp(1)})
+
+        got = manager.get_entries_since(datetime.now(timezone.utc) - timedelta(hours=4))
+        assert [e["text"] for e in got] == ["before rotation", "after rotation"]
+
+    def test_rotated_files_last_written_before_the_cutoff_are_skipped(self, manager):
+        manager.write_entry({"text": "ancient", "timestamp": self.stamp(1)})
+        manager._rotate()
+        rotated = next(manager.output_file.parent.glob("transcript_*"))
+        old = time.time() - 10 * 3600
+        os.utime(rotated, (old, old))
+
+        assert manager.get_entries_since(datetime.now(timezone.utc) - timedelta(hours=4)) == []
+
+    def test_bad_lines_and_missing_timestamps_are_skipped(self, manager):
+        manager.output_file.write_text('not json\n{"text": "no ts"}\n')
+        assert manager.get_entries_since(datetime.now(timezone.utc) - timedelta(hours=4)) == []
+
+    def test_no_file_means_no_entries(self, manager):
+        assert manager.get_entries_since(datetime.now(timezone.utc)) == []

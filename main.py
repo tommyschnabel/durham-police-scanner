@@ -7,7 +7,7 @@ import logging
 import json
 import os
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -21,7 +21,7 @@ from starlette.requests import Request
 from audio_streamer import AudioStreamReader
 from transcriber import WhisperTranscriber, TranscriptionSegment
 from connection_manager import ConnectionManager
-from transcript_storage import TranscriptManager
+from transcript_storage import TranscriptManager, parse_timestamp
 from summary_generator import SummaryGenerator
 
 # Configuration with defaults (can be overridden via environment variables)
@@ -42,7 +42,9 @@ OUTPUT_FILE = os.environ.get('OUTPUT_FILE', 'transcripts/transcript.jsonl')
 MAX_LOG_SIZE_MB = float(os.environ.get('MAX_LOG_SIZE_MB', '100'))
 LOG_RETENTION_DAYS = int(os.environ.get('LOG_RETENTION_DAYS', '7'))
 LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
-WS_HISTORY_LIMIT = int(os.environ.get('WS_HISTORY_LIMIT', '100'))
+# How far back the dashboard's live feed and summary list reach, including
+# what is reloaded from the transcript file after a restart.
+HISTORY_RETENTION_HOURS = float(os.environ.get('HISTORY_RETENTION_HOURS', '4'))
 
 # Domain-specific vocabulary to improve transcription accuracy
 WHISPER_INITIAL_PROMPT = (
@@ -98,6 +100,36 @@ latest_summaries: list = []  # History of summaries for new connections
 last_broadcast_text: str = ""
 state_lock = threading.Lock()  # Protects latest_transcript, latest_summary, latest_summaries, and last_broadcast_text
 
+def prune_history():
+    """Drop feed entries and summaries older than the retention window.
+
+    Caller must hold state_lock.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=HISTORY_RETENTION_HOURS)
+
+    def recent(entry):
+        ts = parse_timestamp(entry.get('timestamp'))
+        return ts is not None and ts >= cutoff
+
+    latest_transcript[:] = [e for e in latest_transcript if recent(e)]
+    latest_summaries[:] = [s for s in latest_summaries if recent(s)]
+
+
+def load_history(manager: TranscriptManager):
+    """Seed the feed and summary list from disk so a restart loses nothing."""
+    global latest_summary
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=HISTORY_RETENTION_HOURS)
+    entries = manager.get_entries_since(cutoff)
+    with state_lock:
+        latest_transcript[:] = [e for e in entries if e.get('type') == 'transcription']
+        latest_summaries[:] = [e for e in entries if e.get('type') == 'summary']
+        latest_summary = latest_summaries[-1] if latest_summaries else None
+    logger.info(
+        f"Loaded {len(latest_transcript)} transcriptions and {len(latest_summaries)} "
+        f"summaries from the last {HISTORY_RETENTION_HOURS:g}h"
+    )
+
+
 # Thread-safe message queue for WebSocket broadcasts
 broadcast_queue: asyncio.Queue = asyncio.Queue()
 
@@ -138,9 +170,7 @@ async def summary_worker():
                 with state_lock:
                     latest_summary = summary
                     latest_summaries.append(summary)
-                    # Keep last 50 summaries (about 4 hours at 5-min intervals)
-                    if len(latest_summaries) > 50:
-                        latest_summaries.pop(0)
+                    prune_history()
 
                 # Log to console
                 logger.info(f"[SUMMARY] {summary['summary'][:200]}...")
@@ -246,11 +276,10 @@ def stream_audio_sync(audio_reader, transcriber, transcript_manager):
                 # Save to file
                 transcript_manager.write_entry(entry)
 
-                # Update latest transcript (keep last 500) - thread-safe
+                # Update latest transcript - thread-safe
                 with state_lock:
                     latest_transcript.append(entry)
-                    if len(latest_transcript) > 500:
-                        latest_transcript[:] = latest_transcript[-500:]
+                    prune_history()
 
                 # Add to summary generator (async - fire and forget)
                 if summary_generator and summary_generator.is_enabled():
@@ -312,13 +341,6 @@ async def transcription_worker():
     ))
     logger.info("Whisper model loaded successfully")
 
-    # Initialize transcript manager
-    transcript_manager = TranscriptManager(
-        output_file=OUTPUT_FILE,
-        max_size_mb=MAX_LOG_SIZE_MB,
-        retention_days=LOG_RETENTION_DAYS
-    )
-
     # Run the synchronous streaming loop in a separate thread
     try:
         await loop.run_in_executor(
@@ -351,7 +373,7 @@ async def transcription_worker():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan."""
-    global transcription_task, broadcast_task, summary_task
+    global transcription_task, broadcast_task, summary_task, transcript_manager
 
     # Startup
     logger.info("Starting up Durham Police Scanner Transcriber")
@@ -359,6 +381,13 @@ async def lifespan(app: FastAPI):
     logger.info(f"Whisper model: {WHISPER_MODEL} on {WHISPER_DEVICE}")
     logger.info(f"Chunk duration: {CHUNK_DURATION_MS}ms")
     logger.info(f"Summary generation: {'enabled' if LLM_BASE_URL else 'disabled (set LLM_BASE_URL)'}")
+
+    transcript_manager = TranscriptManager(
+        output_file=OUTPUT_FILE,
+        max_size_mb=MAX_LOG_SIZE_MB,
+        retention_days=LOG_RETENTION_DAYS
+    )
+    load_history(transcript_manager)
 
     # Start broadcast worker
     broadcast_task = asyncio.create_task(broadcast_worker())
@@ -411,7 +440,11 @@ async def get_dashboard(request: Request):
     return templates.TemplateResponse(
         request=request,
         name="index.html",
-        context={"stream_url": STREAM_URL, "model": WHISPER_MODEL}
+        context={
+            "stream_url": STREAM_URL,
+            "model": WHISPER_MODEL,
+            "retention_hours": HISTORY_RETENTION_HOURS,
+        }
     )
 
 
@@ -422,7 +455,8 @@ async def websocket_endpoint(websocket: WebSocket):
 
     try:
         with state_lock:
-            history_snapshot = list(latest_transcript[-WS_HISTORY_LIMIT:])
+            prune_history()
+            history_snapshot = list(latest_transcript)
             current_summary = latest_summary
             summaries_snapshot = list(latest_summaries)
 

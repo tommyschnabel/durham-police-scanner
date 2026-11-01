@@ -138,3 +138,47 @@ class TranscriptManager:
             logger.error(f"Error reading transcript: {e}")
         
         return entries
+
+    def get_entries_since(self, cutoff: datetime) -> list:
+        """
+        Entries (transcriptions and summaries) timestamped at or after cutoff,
+        oldest first. Reads the active file plus any rotated file written to
+        since cutoff, so history survives a rotation as well as a restart.
+        """
+        files = []
+        for log_file in self.output_file.parent.glob(f"{self.output_file.stem}_*"):
+            try:
+                mtime = datetime.fromtimestamp(log_file.stat().st_mtime, tz=timezone.utc)
+            except OSError:
+                continue
+            if mtime >= cutoff:
+                files.append((mtime, log_file))
+        files = [f for _, f in sorted(files)]
+        if self.output_file.exists():
+            files.append(self.output_file)
+
+        entries = []
+        for log_file in files:
+            opener = gzip.open if log_file.suffix == '.gz' else open
+            try:
+                with opener(log_file, 'rt', encoding='utf-8') as f:
+                    for line in f:
+                        try:
+                            entry = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        ts = parse_timestamp(entry.get('timestamp'))
+                        if ts and ts >= cutoff:
+                            entries.append(entry)
+            except Exception as e:
+                logger.error(f"Error reading {log_file}: {e}")
+        return entries
+
+
+def parse_timestamp(value) -> Optional[datetime]:
+    """Parse an entry timestamp; naive values are taken as local time."""
+    try:
+        ts = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
+    return ts if ts.tzinfo else ts.astimezone()

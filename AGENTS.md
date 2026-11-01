@@ -111,7 +111,7 @@ All configuration uses environment variables with sensible defaults. **No `.env`
 | `MAX_LOG_SIZE_MB` | `100` | Log rotation threshold |
 | `LOG_RETENTION_DAYS` | `7` | Cleanup threshold |
 | `LOG_LEVEL` | `INFO` | Logging level: DEBUG/INFO/WARNING/ERROR |
-| `WS_HISTORY_LIMIT` | `100` | WebSocket history entries sent on connect |
+| `HISTORY_RETENTION_HOURS` | `4` | How far back the live feed and summary list reach. Reloaded from the transcript files on startup, so history survives restarts |
 | `LLM_BASE_URL` | *(none)* | OpenAI-compatible API root ending in `/v1`, e.g. `http://nanbeige:8080/v1`. Summaries are disabled without it |
 | `LLM_MODEL` | `nanbeige-4.2-3b` | Model name sent with each request |
 | `LLM_API_KEY` | *(none)* | Bearer token, only if the server requires one |
@@ -214,7 +214,7 @@ To disable GPU reservations in docker-compose.yml, comment out the `deploy` sect
 
 ### WebSocket
 - Broadcasts JSON messages to all clients
-- Sends history (last WS_HISTORY_LIMIT entries, default 100) to new connections
+- Sends the last HISTORY_RETENTION_HOURS of feed entries and summaries to new connections
 - Ping/pong for connection keepalive (30s interval)
 
 ### File Output

@@ -24,6 +24,7 @@ services:
       - OUTPUT_FILE=${OUTPUT_FILE:-transcripts/transcript.jsonl}
       - MAX_LOG_SIZE_MB=${MAX_LOG_SIZE_MB:-100}
       - LOG_RETENTION_DAYS=${LOG_RETENTION_DAYS:-7}
+      - HISTORY_RETENTION_HOURS=${HISTORY_RETENTION_HOURS:-4}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       # Summaries: any OpenAI-compatible endpoint, e.g. llama-server
       - LLM_BASE_URL=${LLM_BASE_URL:-}
