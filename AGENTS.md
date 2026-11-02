@@ -111,6 +111,7 @@ All configuration uses environment variables with sensible defaults. **No `.env`
 | `MAX_LOG_SIZE_MB` | `100` | Log rotation threshold |
 | `LOG_RETENTION_DAYS` | `7` | Cleanup threshold |
 | `LOG_LEVEL` | `INFO` | Logging level: DEBUG/INFO/WARNING/ERROR |
+| `TRANSCRIBE_TIMEOUT_SECONDS` | `600` | A single Whisper call running longer than this makes `/api/status` return 503 and the process exit, so the container restart policy recovers it |
 | `HISTORY_RETENTION_HOURS` | `4` | How far back the live feed and summary list reach. Reloaded from the transcript files on startup, so history survives restarts |
 | `LLM_BASE_URL` | *(none)* | OpenAI-compatible API root ending in `/v1`, e.g. `http://nanbeige:8080/v1`. Summaries are disabled without it |
 | `LLM_MODEL` | `nanbeige-4.2-3b` | Model name sent with each request |

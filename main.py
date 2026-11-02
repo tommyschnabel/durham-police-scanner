@@ -7,13 +7,14 @@ import logging
 import json
 import os
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from typing import Optional
 
 import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
@@ -45,6 +46,10 @@ LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
 # How far back the dashboard's live feed and summary list reach, including
 # what is reloaded from the transcript file after a restart.
 HISTORY_RETENTION_HOURS = float(os.environ.get('HISTORY_RETENTION_HOURS', '4'))
+# A chunk normally transcribes in seconds. Past this, assume Whisper is wedged:
+# the stuck native call can't be interrupted, so the process exits and the
+# container's restart policy brings it back.
+TRANSCRIBE_TIMEOUT_SECONDS = int(os.environ.get('TRANSCRIBE_TIMEOUT_SECONDS', '600'))
 
 # Domain-specific vocabulary to improve transcription accuracy
 WHISPER_INITIAL_PROMPT = (
@@ -94,11 +99,32 @@ summary_generator: Optional[SummaryGenerator] = None
 connection_manager = ConnectionManager()
 transcription_task: Optional[asyncio.Task] = None
 summary_task: Optional[asyncio.Task] = None
+watchdog_task: Optional[asyncio.Task] = None
 latest_transcript: list = []
 latest_summary: Optional[dict] = None
 latest_summaries: list = []  # History of summaries for new connections
 last_broadcast_text: str = ""
+transcribe_started_at: Optional[float] = None  # time.monotonic() while a chunk is in Whisper
 state_lock = threading.Lock()  # Protects latest_transcript, latest_summary, latest_summaries, and last_broadcast_text
+
+def transcription_stuck() -> bool:
+    """True if the chunk currently in Whisper has run past the timeout.
+
+    Only times the Whisper call, so a stream outage (no chunks at all) doesn't count.
+    """
+    started = transcribe_started_at
+    return started is not None and time.monotonic() - started > TRANSCRIBE_TIMEOUT_SECONDS
+
+
+async def watchdog_worker():
+    """Exit the process if transcription wedges; the restart policy recovers it."""
+    while True:
+        await asyncio.sleep(30)
+        if transcription_stuck():
+            logger.critical(f"Transcription stuck for over {TRANSCRIBE_TIMEOUT_SECONDS}s, exiting")
+            logging.shutdown()
+            os._exit(1)
+
 
 def prune_history():
     """Drop feed entries and summaries older than the retention window.
@@ -222,14 +248,18 @@ def should_filter_single_word(text: str, confidence: float) -> bool:
 
 def stream_audio_sync(audio_reader, transcriber, transcript_manager):
     """Synchronous audio streaming and transcription loop."""
-    global latest_transcript, last_broadcast_text
+    global latest_transcript, last_broadcast_text, transcribe_started_at
 
     logger.info("Starting audio streaming loop")
 
     try:
         for audio_chunk in audio_reader.stream_audio():
             # Process audio chunk
-            segments = transcriber.process_audio_buffer(audio_chunk)
+            transcribe_started_at = time.monotonic()
+            try:
+                segments = transcriber.process_audio_buffer(audio_chunk)
+            finally:
+                transcribe_started_at = None
 
             logger.debug(f"Got {len(segments)} segments from transcription")
             for segment in segments:
@@ -373,7 +403,7 @@ async def transcription_worker():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan."""
-    global transcription_task, broadcast_task, summary_task, transcript_manager
+    global transcription_task, broadcast_task, summary_task, transcript_manager, watchdog_task
 
     # Startup
     logger.info("Starting up Durham Police Scanner Transcriber")
@@ -398,10 +428,14 @@ async def lifespan(app: FastAPI):
     # Start summary worker (will exit immediately if disabled)
     summary_task = asyncio.create_task(summary_worker())
 
+    watchdog_task = asyncio.create_task(watchdog_worker())
+
     yield
 
     # Shutdown
     logger.info("Shutting down")
+    if watchdog_task:
+        watchdog_task.cancel()
     if broadcast_task:
         await broadcast_queue.put(None)  # Signal broadcast worker to stop
         try:
@@ -501,6 +535,8 @@ async def websocket_endpoint(websocket: WebSocket):
 @app.get("/api/status")
 async def get_status():
     """Health check endpoint for Docker."""
+    if transcription_stuck():
+        return JSONResponse(status_code=503, content={"status": "transcription stuck"})
     return {
         "status": "healthy",
         "connected_clients": len(connection_manager.active_connections),

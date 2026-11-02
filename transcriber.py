@@ -104,7 +104,11 @@ class WhisperTranscriber:
                 initial_prompt=self.initial_prompt,
                 beam_size=self.beam_size,
                 word_timestamps=True,
-                condition_on_previous_text=True,
+                # Feeding prior text back in lets a garbled chunk snowball into a
+                # repetition loop ("215, 215, 215, ..."); the threshold skips
+                # hallucinated text over long silences. Needs word_timestamps.
+                condition_on_previous_text=False,
+                hallucination_silence_threshold=2.0,
                 vad_filter=self.vad_filter
             )
             

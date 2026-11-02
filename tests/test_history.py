@@ -53,3 +53,23 @@ def test_load_history_splits_feed_and_summaries(tmp_path):
     assert [e["text"] for e in main.latest_transcript] == ["a"]
     assert [s["summary"] for s in main.latest_summaries] == ["first", "second"]
     assert main.latest_summary["summary"] == "second"
+
+
+class TestTranscriptionStuck:
+    def test_idle_is_not_stuck(self, monkeypatch):
+        monkeypatch.setattr(main, "transcribe_started_at", None)
+        assert main.transcription_stuck() is False
+
+    def test_a_chunk_within_the_timeout_is_not_stuck(self, monkeypatch):
+        monkeypatch.setattr(main, "transcribe_started_at", main.time.monotonic() - 10)
+        assert main.transcription_stuck() is False
+
+    def test_a_chunk_past_the_timeout_is_stuck(self, monkeypatch):
+        monkeypatch.setattr(main, "transcribe_started_at", main.time.monotonic() - 601)
+        assert main.transcription_stuck() is True
+        assert (await_status()).status_code == 503
+
+
+def await_status():
+    import asyncio
+    return asyncio.run(main.get_status())
