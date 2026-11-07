@@ -174,9 +174,24 @@ async def broadcast_worker():
     logger.info("Broadcast worker stopped")
 
 
+async def publish_summary(summary: dict):
+    """Record a new summary, persist it, and push it to connected clients."""
+    global latest_summary
+    with state_lock:
+        latest_summary = summary
+        latest_summaries.append(summary)
+        prune_history()
+
+    logger.info(f"[SUMMARY] {summary['summary'][:200]}...")
+
+    if transcript_manager:
+        transcript_manager.write_entry(summary)
+
+    await broadcast_queue.put(summary)
+
+
 async def summary_worker():
     """Background task that generates summaries periodically."""
-    global latest_summary
 
     if not summary_generator or not summary_generator.is_enabled():
         logger.info("Summary generation disabled (no LLM_BASE_URL)")
@@ -192,21 +207,7 @@ async def summary_worker():
             # Try to generate summary
             summary = await summary_generator.generate_summary()
             if summary:
-                # Update latest summary and add to history
-                with state_lock:
-                    latest_summary = summary
-                    latest_summaries.append(summary)
-                    prune_history()
-
-                # Log to console
-                logger.info(f"[SUMMARY] {summary['summary'][:200]}...")
-
-                # Save to file
-                if transcript_manager:
-                    transcript_manager.write_entry(summary)
-
-                # Broadcast to all clients
-                await broadcast_queue.put(summary)
+                await publish_summary(summary)
 
         except asyncio.CancelledError:
             break
@@ -530,6 +531,42 @@ async def websocket_endpoint(websocket: WebSocket):
         logger.error(f"WebSocket error: {e}")
     finally:
         connection_manager.disconnect(websocket)
+
+
+# Forcing a summary costs an LLM call; one per minute is plenty.
+FORCE_SUMMARY_COOLDOWN = timedelta(minutes=1)
+last_forced_summary: Optional[datetime] = None
+
+
+@app.post("/api/summary")
+async def force_summary():
+    """Generate a summary now instead of waiting for the next interval.
+
+    Doesn't move the regular schedule: the interval tick still fires when it
+    would have, so this only adds an extra summary in between.
+    """
+    global last_forced_summary
+
+    if not summary_generator or not summary_generator.is_enabled():
+        return JSONResponse(status_code=503, content={"error": "summaries disabled"})
+
+    now = datetime.now(timezone.utc)
+    if last_forced_summary and now - last_forced_summary < FORCE_SUMMARY_COOLDOWN:
+        retry_after = FORCE_SUMMARY_COOLDOWN - (now - last_forced_summary)
+        seconds = max(1, int(retry_after.total_seconds()))
+        return JSONResponse(
+            status_code=429,
+            headers={"Retry-After": str(seconds)},
+            content={"error": f"rate limited, retry in {seconds}s"},
+        )
+    last_forced_summary = now
+
+    summary = await summary_generator.generate_summary(force=True)
+    if not summary:
+        return JSONResponse(status_code=409, content={"error": "not enough recent transcript to summarize"})
+
+    await publish_summary(summary)
+    return summary
 
 
 @app.get("/api/status")

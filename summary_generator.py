@@ -134,9 +134,14 @@ class SummaryGenerator:
 
         return datetime.now(timezone.utc).astimezone() - self.last_summary_time >= self.summary_interval
 
-    async def generate_summary(self) -> Optional[dict]:
+    async def generate_summary(self, force: bool = False) -> Optional[dict]:
         """
         Generate a summary of recent transcript activity.
+
+        Args:
+            force: Skip the interval check. A forced summary leaves
+                last_summary_time alone so the regular schedule keeps its
+                cadence and still fires on time.
 
         Returns:
             Summary dict with 'summary', 'timestamp', and 'period' keys,
@@ -145,7 +150,7 @@ class SummaryGenerator:
         if not self.is_enabled():
             return None
 
-        if not await self.should_generate_summary():
+        if not force and not await self.should_generate_summary():
             return None
 
         async with self.lock:
@@ -170,7 +175,9 @@ class SummaryGenerator:
                     None, self._call_llm, transcript_text
                 )
                 if summary_text:
-                    self.last_summary_time = datetime.now(timezone.utc).astimezone()
+                    generated_at = datetime.now(timezone.utc).astimezone()
+                    if not force:
+                        self.last_summary_time = generated_at
 
                     # Calculate period
                     start_time = datetime.fromisoformat(recent_entries[0]['timestamp'])
@@ -179,7 +186,7 @@ class SummaryGenerator:
                     return {
                         'type': 'summary',
                         'summary': summary_text,
-                        'timestamp': self.last_summary_time.isoformat(),
+                        'timestamp': generated_at.isoformat(),
                         'period': {
                             'start': start_time.isoformat(),
                             'end': end_time.isoformat(),

@@ -415,6 +415,7 @@
         <div class="controls">
             <button onclick="clearDisplay()">Clear Display</button>
             <button onclick="exportTranscript()">Export JSON</button>
+            <button onclick="forceSummary()" id="forceSummaryBtn">Summarize Now</button>
         </div>
 
         <!-- Tabs -->
@@ -708,6 +709,30 @@
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        // The new summary arrives over the WebSocket like any other, so this
+        // only has to ask for it and report failures.
+        async function forceSummary() {
+            const btn = document.getElementById('forceSummaryBtn');
+            const label = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Summarizing...';
+            let message = null;
+            try {
+                const res = await fetch('/api/summary', { method: 'POST' });
+                if (!res.ok) {
+                    const body = await res.json().catch(() => ({}));
+                    message = body.error || `Summary failed (${res.status})`;
+                }
+            } catch (e) {
+                message = 'Summary request failed';
+            }
+            btn.textContent = message || label;
+            setTimeout(() => {
+                btn.textContent = label;
+                btn.disabled = false;
+            }, message ? 3000 : 0);
         }
 
         function clearDisplay() {

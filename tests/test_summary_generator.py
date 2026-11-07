@@ -264,3 +264,16 @@ class TestCleanSummary:
 
     def test_none_becomes_empty(self):
         assert clean_summary(None) == ""
+
+    @pytest.mark.asyncio
+    async def test_force_ignores_the_interval_and_keeps_the_schedule(self, gen, monkeypatch):
+        gen.transcript_history = [entry(-120), entry(0)]
+        scheduled = now() - timedelta(minutes=1)
+        gen.last_summary_time = scheduled
+        monkeypatch.setattr(gen, "_call_llm", lambda text: "units clearing")
+
+        result = await gen.generate_summary(force=True)
+
+        assert result["summary"] == "units clearing"
+        # The regular tick still fires relative to the last scheduled summary.
+        assert gen.last_summary_time == scheduled
