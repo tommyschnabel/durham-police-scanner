@@ -24,6 +24,7 @@ from transcriber import WhisperTranscriber, TranscriptionSegment
 from connection_manager import ConnectionManager
 from transcript_storage import TranscriptManager, parse_timestamp
 from summary_generator import SummaryGenerator
+from radio_codes import normalize_radio_codes
 
 # Configuration with defaults (can be overridden via environment variables)
 STREAM_URL = os.environ.get('STREAM_URL', 'https://stream.durhampolicescanner.com/')
@@ -54,7 +55,8 @@ TRANSCRIBE_TIMEOUT_SECONDS = int(os.environ.get('TRANSCRIBE_TIMEOUT_SECONDS', '6
 # Domain-specific vocabulary to improve transcription accuracy
 WHISPER_INITIAL_PROMPT = (
     "Durham Police Department, officer, dispatch, suspect, vehicle, license plate, "
-    "unit, backup, 10-4, 10-20, 10-code, felony, misdemeanor, traffic stop, "
+    "unit, backup, 10-4, 10-8, 10-20, 10-23, 10-24, 10-50PI, 10-78 code 3, "
+    "Signal 20, felony, misdemeanor, traffic stop, "
     "warrant, arrest, incident, location, address, description, "
     "North Carolina, Raleigh, Chapel Hill, Durham, "
     "sheriff, deputy, patrol, sergeant, lieutenant, captain, "
@@ -66,10 +68,6 @@ WHISPER_INITIAL_PROMPT = (
 TEXT_CORRECTIONS = {
     "durham police": "Durham Police",
     "durham pd": "Durham PD",
-    "10 4": "10-4",
-    "10 20": "10-20",
-    "ten four": "10-4",
-    "ten twenty": "10-20",
 }
 
 # Phrases that should always be skipped (case-insensitive matching)
@@ -231,7 +229,7 @@ def apply_text_corrections(text: str) -> str:
         if wrong in text_lower:
             text = text.replace(wrong, correct)
             text_lower = text.lower()
-    return text
+    return normalize_radio_codes(text)
 
 
 def should_filter_single_word(text: str, confidence: float) -> bool:
